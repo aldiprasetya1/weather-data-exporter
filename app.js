@@ -563,7 +563,9 @@ function aggregateOpenMeteoDay(date, g) {
         precipitation_sum: round(sum(g.precips), 2),
         wind_speed_10m_mean: round(mean(g.speeds), 2),
         wind_direction_10m_dominant: dirMean == null ? null : Math.round(dirMean),
-        sunshine_duration_h: round((sum(g.sunshineSec) ?? 0) / 3600, 2),
+        sunshine_duration_h: g.sunshineSec.length
+            ? round(sum(g.sunshineSec) / 3600, 2)
+            : null,
     };
 }
 
@@ -594,12 +596,13 @@ async function callOpenMeteo({
     const url = `${base}?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {
-        let detail = "";
+        const text = await res.text();
+        let detail = text;
         try {
-            const j = await res.json();
+            const j = JSON.parse(text);
             detail = j.reason || JSON.stringify(j);
         } catch (_) {
-            detail = await res.text();
+            // detail stays as raw text
         }
         throw new Error(`Open-Meteo (${kind}) HTTP ${res.status}: ${detail}`);
     }
@@ -623,12 +626,13 @@ async function fetchPower({ city, startDate, endDate }) {
     const url = `${POWER_URL}?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {
-        let detail = "";
+        const text = await res.text();
+        let detail = text;
         try {
-            const j = await res.json();
+            const j = JSON.parse(text);
             detail = j.message || JSON.stringify(j.messages || j);
         } catch (_) {
-            detail = await res.text();
+            // detail stays as raw text
         }
         throw new Error(`NASA POWER HTTP ${res.status}: ${detail}`);
     }
@@ -702,12 +706,13 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         `?start=${startDate}&end=${endDate}`;
     const res = await fetch(url);
     if (!res.ok) {
-        let detail = "";
+        const text = await res.text();
+        let detail = text;
         try {
-            const j = await res.json();
+            const j = JSON.parse(text);
             detail = j.detail || JSON.stringify(j);
         } catch (_) {
-            detail = await res.text();
+            // detail stays as raw text
         }
         throw new Error(`Backend HTTP ${res.status}: ${detail}`);
     }
