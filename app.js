@@ -1,10 +1,12 @@
-// Weather Data Exporter — fetches weather data from Open-Meteo (model)
-// or Meteostat (Indonesian observation stations) via a backend proxy,
-// renders a windrose, and exports to Excel.
+// Weather Data Exporter — fetches weather data from Open-Meteo (model),
+// Meteostat (Indonesian observation stations via a backend proxy), or NASA POWER
+// (MERRA-2 reanalysis with solar radiation), renders a windrose, and exports to Excel.
 
 const GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
+const POWER_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point";
+const POWER_FILL = -999.0;
 
 const BACKEND_URL =
     (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "http://localhost:8001";
@@ -55,8 +57,27 @@ const METEOSTAT_META = {
     coco: { label: "Kode cuaca", unit: "" },
 };
 
+// NASA POWER parameter metadata. Order here defines column order in the export.
+// All values are hourly (UTC time-standard).
+const POWER_PARAMS = [
+    { key: "T2M", label: "Suhu (2 m)", unit: "°C" },
+    { key: "RH2M", label: "Kelembaban (2 m)", unit: "%" },
+    { key: "PRECTOTCORR", label: "Presipitasi", unit: "mm/jam" },
+    { key: "PS", label: "Tekanan permukaan", unit: "kPa" },
+    { key: "CLOUD_AMT", label: "Tutupan awan", unit: "%" },
+    { key: "WS10M", label: "Kecepatan angin (10 m)", unit: "m/s" },
+    { key: "WD10M", label: "Arah angin (10 m)", unit: "°" },
+    { key: "WS50M", label: "Kecepatan angin (50 m)", unit: "m/s" },
+    { key: "WD50M", label: "Arah angin (50 m)", unit: "°" },
+    { key: "ALLSKY_SFC_SW_DWN", label: "GHI (all-sky)", unit: "Wh/m²" },
+    { key: "ALLSKY_SFC_SW_DNI", label: "DNI (all-sky)", unit: "Wh/m²" },
+    { key: "ALLSKY_SFC_SW_DIFF", label: "DHI (all-sky)", unit: "Wh/m²" },
+    { key: "CLRSKY_SFC_SW_DWN", label: "GHI (clearsky)", unit: "Wh/m²" },
+    { key: "ALLSKY_SFC_PAR_TOT", label: "PAR (all-sky)", unit: "W/m²" },
+];
+
 const state = {
-    source: "openmeteo", // "openmeteo" | "meteostat"
+    source: "openmeteo", // "openmeteo" | "meteostat" | "power"
     selectedCity: null,
     selectedStation: null,
     stations: [],
@@ -80,8 +101,10 @@ document.addEventListener("DOMContentLoaded", () => {
     els.timezone = document.getElementById("timezone");
     els.periodHelpOM = document.getElementById("period-help-openmeteo");
     els.periodHelpMS = document.getElementById("period-help-meteostat");
+    els.periodHelpPW = document.getElementById("period-help-power");
     els.varsSection = document.getElementById("vars-section");
     els.varsHelpMS = document.getElementById("vars-help-meteostat");
+    els.varsHelpPW = document.getElementById("vars-help-power");
     els.previewBtn = document.getElementById("preview-btn");
     els.downloadBtn = document.getElementById("download-btn");
     els.windroseBtn = document.getElementById("windrose-btn");
@@ -145,20 +168,35 @@ function setupSourceToggle() {
 }
 
 function updateSourceUI() {
-    const isMeteostat = state.source === "meteostat";
-    els.citySection.hidden = isMeteostat;
-    els.stationSection.hidden = !isMeteostat;
-    els.periodHelpOM.hidden = isMeteostat;
-    els.periodHelpMS.hidden = !isMeteostat;
-    els.varsSection.hidden = isMeteostat;
-    els.varsHelpMS.hidden = !isMeteostat;
+    const src = state.source;
+    const isOM = src === "openmeteo";
+    const isMS = src === "meteostat";
+    const isPW = src === "power";
 
-    // Granularity: Meteostat only supports hourly in this build.
+    // POWER reuses the city picker (it just needs lat/lon).
+    els.citySection.hidden = isMS;
+    els.stationSection.hidden = !isMS;
+    els.periodHelpOM.hidden = !isOM;
+    els.periodHelpMS.hidden = !isMS;
+    if (els.periodHelpPW) els.periodHelpPW.hidden = !isPW;
+    // Variable picker is only used for Open-Meteo. POWER and Meteostat fetch fixed sets.
+    els.varsSection.hidden = !isOM;
+    els.varsHelpMS.hidden = true;
+    if (els.varsHelpPW) els.varsHelpPW.hidden = true;
+    if (isMS) els.varsHelpMS.hidden = false;
+    if (isPW && els.varsHelpPW) els.varsHelpPW.hidden = false;
+    // Show the vars-section just to render the help text for MS / PW.
+    if (isMS || isPW) els.varsSection.hidden = false;
+    // Hide the actual checkbox grid for MS / PW.
+    const grid = els.varsSection.querySelector(".checkbox-grid");
+    if (grid) grid.style.display = isOM ? "" : "none";
+
+    // Granularity: only Open-Meteo supports daily in this build.
     const dailyOpt = els.granularity.querySelector('option[value="daily"]');
-    if (dailyOpt) dailyOpt.disabled = isMeteostat;
-    if (isMeteostat) els.granularity.value = "hourly";
+    if (dailyOpt) dailyOpt.disabled = !isOM;
+    if (!isOM) els.granularity.value = "hourly";
 
-    if (isMeteostat && !state.stations.length) {
+    if (isMS && !state.stations.length) {
         loadStations();
     }
 }
@@ -353,6 +391,15 @@ async function handleSubmit({ download }) {
             }
             result = await fetchMeteostat({
                 station: state.selectedStation,
+                startDate,
+                endDate,
+            });
+        } else if (state.source === "power") {
+            if (!state.selectedCity) {
+                throw new Error("Pilih kota dulu dari saran pencarian (POWER butuh lat/lon).");
+            }
+            result = await fetchPower({
+                city: state.selectedCity,
                 startDate,
                 endDate,
             });
@@ -565,6 +612,96 @@ async function callOpenMeteo({
     return await res.json();
 }
 
+// ----- NASA POWER fetch -----
+
+async function fetchPower({ city, startDate, endDate }) {
+    // POWER hourly endpoint expects YYYYMMDD strings.
+    const compact = (s) => s.replace(/-/g, "");
+    const params = new URLSearchParams({
+        parameters: POWER_PARAMS.map((p) => p.key).join(","),
+        community: "RE",
+        longitude: String(city.longitude),
+        latitude: String(city.latitude),
+        start: compact(startDate),
+        end: compact(endDate),
+        format: "JSON",
+        "time-standard": "UTC",
+    });
+    const url = `${POWER_URL}?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+        let detail = "";
+        try {
+            const j = await res.json();
+            detail = j.message || JSON.stringify(j.messages || j);
+        } catch (_) {
+            detail = await res.text();
+        }
+        throw new Error(`NASA POWER HTTP ${res.status}: ${detail}`);
+    }
+    const data = await res.json();
+    const param = data.properties && data.properties.parameter;
+    if (!param) throw new Error("Respons NASA POWER tidak punya properties.parameter.");
+
+    // Build sorted list of timestamps from the union of all parameter keys.
+    const tset = new Set();
+    for (const k of Object.keys(param)) {
+        for (const t of Object.keys(param[k])) tset.add(t);
+    }
+    const times = Array.from(tset).sort();
+
+    const headers = [
+        "Waktu (UTC)",
+        ...POWER_PARAMS.map((p) => `${p.label} (${p.unit})`),
+    ];
+    const rows = times.map((t) => {
+        const iso = powerKeyToIso(t);
+        return [iso, ...POWER_PARAMS.map((p) => clean(param[p.key]?.[t]))];
+    });
+
+    const windRows = [];
+    for (const t of times) {
+        const d = clean(param.WD10M?.[t]);
+        const sMs = clean(param.WS10M?.[t]);
+        if (d != null && sMs != null) {
+            // Convert m/s -> km/jam for windrose to match other sources.
+            windRows.push({ dir: d, spd: sMs * 3.6 });
+        }
+    }
+
+    const elev =
+        data.geometry && data.geometry.coordinates && data.geometry.coordinates[2];
+
+    return {
+        source: "power",
+        headers,
+        rows,
+        windRows,
+        meta: {
+            kind: "power",
+            city,
+            startDate,
+            endDate,
+            elevation: elev,
+            sources: (data.header && data.header.sources) || [],
+            apiVersion: data.header && data.header.api && data.header.api.version,
+            timeStandard: "UTC",
+        },
+    };
+}
+
+function clean(v) {
+    if (v == null) return null;
+    if (typeof v === "number" && v <= POWER_FILL + 0.001) return null;
+    return v;
+}
+
+function powerKeyToIso(t) {
+    // "2025010100" -> "2025-01-01T00:00"
+    if (!/^\d{10}$/.test(t)) return t;
+    return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}T${t.slice(8, 10)}:00`;
+}
+
 // ----- Meteostat fetch (via backend) -----
 
 async function fetchMeteostat({ station, startDate, endDate }) {
@@ -648,6 +785,18 @@ function renderPreview(result) {
 }
 
 function describeResult(result) {
+    if (result.source === "power") {
+        const c = result.meta.city;
+        const parts = [c.name];
+        if (c.admin1) parts.push(c.admin1);
+        if (c.country) parts.push(c.country);
+        return (
+            `Lokasi: ${parts.join(", ")} (${c.latitude.toFixed(3)}, ${c.longitude.toFixed(3)})` +
+            ` · Periode: ${result.meta.startDate} → ${result.meta.endDate} (UTC)` +
+            ` · Sumber: NASA POWER (${(result.meta.sources || []).join(", ") || "MERRA-2"})` +
+            ` · Total baris: ${result.rows.length}`
+        );
+    }
     if (result.source === "meteostat") {
         const s = result.meta.station;
         const wmo = s.wmo || s.id;
@@ -695,6 +844,28 @@ function exportXlsx(result) {
 }
 
 function buildMetaRows(result) {
+    if (result.source === "power") {
+        const c = result.meta.city;
+        const cityParts = [c.name];
+        if (c.admin1) cityParts.push(c.admin1);
+        if (c.country) cityParts.push(c.country);
+        return [
+            ["Field", "Value"],
+            ["Sumber", "NASA POWER (power.larc.nasa.gov, MERRA-2 + CERES SYN1deg)"],
+            ["API version", result.meta.apiVersion || ""],
+            ["Sumber asal", (result.meta.sources || []).join(", ")],
+            ["Community", "RE (Renewable Energy)"],
+            ["Lokasi", cityParts.join(", ")],
+            ["Latitude", c.latitude],
+            ["Longitude", c.longitude],
+            ["Elevasi grid (m)", result.meta.elevation ?? ""],
+            ["Tanggal mulai", result.meta.startDate],
+            ["Tanggal akhir", result.meta.endDate],
+            ["Granularitas", "hourly"],
+            ["Time standard", result.meta.timeStandard || "UTC"],
+            ["Diunduh pada", new Date().toISOString()],
+        ];
+    }
     if (result.source === "meteostat") {
         const s = result.meta.station;
         const wmo = s.wmo || s.id;
@@ -737,11 +908,14 @@ function buildMetaRows(result) {
 
 function buildFilename(result) {
     const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
-    const start = result.source === "meteostat" ? result.meta.startDate : result.meta.startDate;
-    const end = result.source === "meteostat" ? result.meta.endDate : result.meta.endDate;
+    const start = result.meta.startDate;
+    const end = result.meta.endDate;
     if (result.source === "meteostat") {
         const s = result.meta.station;
         return `weather_meteostat_${safe(s.wmo || s.id)}_${start}_to_${end}.xlsx`;
+    }
+    if (result.source === "power") {
+        return `weather_power_${safe(result.meta.city.name)}_${start}_to_${end}.xlsx`;
     }
     return `weather_${safe(result.meta.city.name)}_${start}_to_${end}_${result.meta.granularity}.xlsx`;
 }
@@ -870,6 +1044,13 @@ function windroseTitle(result) {
             ` · ${result.meta.startDate} → ${result.meta.endDate}`
         );
     }
+    if (result.source === "power") {
+        const c = result.meta.city;
+        return (
+            `Windrose · ${c.name} (NASA POWER, 10 m)` +
+            ` · ${result.meta.startDate} → ${result.meta.endDate}`
+        );
+    }
     const c = result.meta.city;
     return `Windrose · ${c.name} · ${result.meta.startDate} → ${result.meta.endDate}`;
 }
@@ -898,6 +1079,8 @@ function downloadWindrosePNG() {
     if (result.source === "meteostat") {
         const s = result.meta.station;
         filename = `windrose_meteostat_${safe(s.wmo || s.id)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+    } else if (result.source === "power") {
+        filename = `windrose_power_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
     } else {
         filename = `windrose_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
     }

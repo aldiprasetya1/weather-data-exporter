@@ -11,9 +11,11 @@
     <header>
         <h1>🌦️ Weather Data Exporter</h1>
         <p class="subtitle">
-            Ambil data cuaca historis dan ekspor ke Excel.
-            Sumber data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
-            (gratis, tanpa API key).
+            Ambil data cuaca historis dan ekspor ke Excel. Tiga sumber:
+            <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>,
+            <a href="https://meteostat.net/" target="_blank" rel="noopener">Meteostat</a>, dan
+            <a href="https://power.larc.nasa.gov/" target="_blank" rel="noopener">NASA POWER</a>
+            (semua gratis, tanpa API key).
         </p>
     </header>
 
@@ -34,6 +36,13 @@
                         <span>
                             <strong>Meteostat (stasiun observasi Indonesia)</strong>
                             <em class="muted">— observasi historis dari stasiun ASOS/SYNOP BMKG (~129 stasiun)</em>
+                        </span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="source" value="power" />
+                        <span>
+                            <strong>NASA POWER (model + radiasi surya)</strong>
+                            <em class="muted">— MERRA-2 reanalysis, lengkap dengan GHI/DNI/DHI/PAR (untuk PV / pertanian)</em>
                         </span>
                     </label>
                 </div>
@@ -114,6 +123,10 @@
                     (sampai ~beberapa minggu yang lalu, tergantung stasiun).
                     Maks 366 hari per request.
                 </p>
+                <p class="muted" id="period-help-power" hidden>
+                    Sumber: NASA POWER (MERRA-2 reanalysis + CERES/SYN1deg untuk radiasi). Hourly
+                    tersedia 2001-01-01 → ~3 hari yang lalu. Maks 366 hari per request.
+                </p>
             </section>
 
             <section id="vars-section" class="card">
@@ -135,6 +148,13 @@
                 <p class="muted" id="vars-help-meteostat" hidden>
                     Untuk Meteostat semua variabel hourly stasiun ikut diunduh otomatis: suhu, dew point,
                     kelembaban, presipitasi, salju, arah/kecepatan/hembusan angin, tekanan, sunshine, kode cuaca.
+                </p>
+                <p class="muted" id="vars-help-power" hidden>
+                    Untuk NASA POWER semua variabel ikut diunduh otomatis: suhu (T2M), kelembaban
+                    (RH2M), presipitasi (PRECTOTCORR), tutupan awan (CLOUD_AMT), kecepatan/arah angin
+                    10 m (WS10M/WD10M), serta radiasi surya — GHI (ALLSKY_SFC_SW_DWN), DNI
+                    (ALLSKY_SFC_SW_DNI), DHI (ALLSKY_SFC_SW_DIFF), clearsky GHI, dan PAR
+                    (ALLSKY_SFC_PAR_TOT). Kecepatan angin dikonversi ke km/jam untuk windrose.
                 </p>
             </section>
 
