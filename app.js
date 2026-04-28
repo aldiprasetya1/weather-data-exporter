@@ -11,62 +11,55 @@ const POWER_FILL = -999.0;
 const BACKEND_URL =
     (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "http://localhost:8001";
 
-// Open-Meteo daily variables fetched for every request. Wind speeds are
-// requested in m/s via the `wind_speed_unit=ms` query parameter.
-const OPENMETEO_DAILY_VARS = [
-    "temperature_2m_max",
-    "temperature_2m_min",
-    "precipitation_sum",
-    "wind_speed_10m_max",
-    "wind_direction_10m_dominant",
-    "wind_gusts_10m_max",
-    "weather_code",
+// Open-Meteo hourly variables fetched on every request. Wind speeds come back
+// in m/s thanks to the `wind_speed_unit=ms` query parameter. The hourly values
+// are aggregated to daily on the client to compute true means (Open-Meteo's
+// daily endpoint only exposes max for wind_speed_10m).
+const OPENMETEO_HOURLY_VARS = [
+    "temperature_2m",
+    "precipitation",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "sunshine_duration",
 ];
 
-// Daily-aggregate label & unit metadata for Open-Meteo.
-const DAILY_LABEL = {
-    temperature_2m_mean: { label: "Suhu rata-rata", unit: "°C" },
-    temperature_2m_max: { label: "Suhu maks", unit: "°C" },
-    temperature_2m_min: { label: "Suhu min", unit: "°C" },
-    precipitation_sum: { label: "Total presipitasi", unit: "mm" },
-    wind_speed_10m_max: { label: "Kecepatan angin maks", unit: "m/s" },
-    wind_gusts_10m_max: { label: "Hembusan angin maks", unit: "m/s" },
-    wind_direction_10m_dominant: { label: "Arah angin dominan", unit: "°" },
-    weather_code: { label: "Kode cuaca (WMO)", unit: "" },
-};
+// Order of columns in the Open-Meteo daily preview/Excel output.
+const OPENMETEO_DAILY_COLS = [
+    { key: "temperature_2m_mean", label: "Suhu rata-rata", unit: "°C" },
+    { key: "precipitation_sum", label: "Curah hujan", unit: "mm" },
+    { key: "wind_speed_10m_mean", label: "Kecepatan angin rata-rata", unit: "m/s" },
+    { key: "wind_direction_10m_dominant", label: "Arah angin dominan", unit: "°" },
+    { key: "sunshine_duration_h", label: "Lama penyinaran matahari", unit: "jam" },
+];
 
-// Meteostat daily column metadata. Keys must match the backend `/daily/` response.
-// Wind speeds (`wspd`, `wpgt`) are converted to m/s in the backend.
-const METEOSTAT_META = {
-    tavg: { label: "Suhu rata-rata", unit: "°C" },
-    tmin: { label: "Suhu min", unit: "°C" },
-    tmax: { label: "Suhu maks", unit: "°C" },
-    prcp: { label: "Presipitasi", unit: "mm" },
-    snow: { label: "Salju", unit: "mm" },
-    wdir: { label: "Arah angin", unit: "°" },
-    wspd: { label: "Kecepatan angin", unit: "m/s" },
-    wpgt: { label: "Hembusan angin (peak)", unit: "m/s" },
-    pres: { label: "Tekanan", unit: "hPa" },
-    tsun: { label: "Sunshine", unit: "menit" },
-};
+// Meteostat daily columns shown in the preview and Excel output. The backend
+// `/daily/` response includes more fields, but we filter down to the five
+// requested variables. Wind speeds (`wspd`) are already in m/s thanks to the
+// backend's km/h -> m/s conversion; sunshine duration (`tsun`) comes back in
+// minutes and is converted to hours on the client.
+const METEOSTAT_DISPLAY_COLS = [
+    { src: "tavg", label: "Suhu rata-rata", unit: "°C" },
+    { src: "prcp", label: "Curah hujan", unit: "mm" },
+    { src: "wspd", label: "Kecepatan angin rata-rata", unit: "m/s" },
+    { src: "wdir", label: "Arah angin dominan", unit: "°" },
+    { src: "tsun_h", label: "Lama penyinaran matahari", unit: "jam" },
+];
 
-// NASA POWER parameter metadata. Order here defines column order in the export.
-// All values are daily aggregates (UTC).
+// NASA POWER parameter metadata. Order here defines column order in the
+// export. All values are daily aggregates (UTC). NASA POWER does not expose a
+// direct "sunshine duration" parameter, so we report the daily all-sky GHI
+// (ALLSKY_SFC_SW_DWN, kWh/m²/hari) as a solar-energy proxy and document the
+// substitution in the Info sheet.
 const POWER_PARAMS = [
-    { key: "T2M", label: "Suhu (2 m)", unit: "°C" },
-    { key: "RH2M", label: "Kelembaban (2 m)", unit: "%" },
-    { key: "PRECTOTCORR", label: "Presipitasi", unit: "mm/hari" },
-    { key: "PS", label: "Tekanan permukaan", unit: "kPa" },
-    { key: "CLOUD_AMT", label: "Tutupan awan", unit: "%" },
-    { key: "WS10M", label: "Kecepatan angin (10 m)", unit: "m/s" },
-    { key: "WD10M", label: "Arah angin (10 m)", unit: "°" },
-    { key: "WS50M", label: "Kecepatan angin (50 m)", unit: "m/s" },
-    { key: "WD50M", label: "Arah angin (50 m)", unit: "°" },
-    { key: "ALLSKY_SFC_SW_DWN", label: "GHI (all-sky)", unit: "kWh/m²/hari" },
-    { key: "ALLSKY_SFC_SW_DNI", label: "DNI (all-sky)", unit: "kWh/m²/hari" },
-    { key: "ALLSKY_SFC_SW_DIFF", label: "DHI (all-sky)", unit: "kWh/m²/hari" },
-    { key: "CLRSKY_SFC_SW_DWN", label: "GHI (clearsky)", unit: "kWh/m²/hari" },
-    { key: "ALLSKY_SFC_PAR_TOT", label: "PAR (all-sky)", unit: "MJ/m²/hari" },
+    { key: "T2M", label: "Suhu rata-rata", unit: "°C" },
+    { key: "PRECTOTCORR", label: "Curah hujan", unit: "mm/hari" },
+    { key: "WS10M", label: "Kecepatan angin rata-rata (10 m)", unit: "m/s" },
+    { key: "WD10M", label: "Arah angin dominan (10 m)", unit: "°" },
+    {
+        key: "ALLSKY_SFC_SW_DWN",
+        label: "Radiasi GHI (proxy penyinaran)",
+        unit: "kWh/m²/hari",
+    },
 ];
 
 const state = {
@@ -454,8 +447,6 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
     const start = parseLocalDate(startDate);
     const end = parseLocalDate(endDate);
 
-    const apiVars = OPENMETEO_DAILY_VARS.slice();
-
     const segments = [];
     if (end < archiveCutoff) {
         segments.push({ kind: "archive", start, end });
@@ -468,8 +459,8 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
         segments.push({ kind: "forecast", start: archiveCutoff, end });
     }
 
-    const allTimes = [];
-    const allRows = {};
+    // Accumulate hourly samples keyed by local-date (YYYY-MM-DD).
+    const groups = {};
 
     for (const seg of segments) {
         const data = await callOpenMeteo({
@@ -478,34 +469,61 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
             longitude: city.longitude,
             startDate: isoDate(seg.start),
             endDate: isoDate(seg.end),
-            apiVars,
             timezone,
         });
-        const block = data.daily;
+        const block = data.hourly;
         if (!block || !block.time) continue;
         block.time.forEach((t, i) => {
-            if (!(t in allRows)) {
-                allRows[t] = {};
-                allTimes.push(t);
+            const date = String(t).slice(0, 10);
+            if (!groups[date]) {
+                groups[date] = {
+                    temps: [],
+                    precips: [],
+                    speeds: [],
+                    sins: [],
+                    coses: [],
+                    sunshineSec: [],
+                };
             }
-            for (const v of apiVars) {
-                if (block[v] !== undefined) allRows[t][v] = block[v][i];
+            const g = groups[date];
+            const tmp = block.temperature_2m?.[i];
+            const pr = block.precipitation?.[i];
+            const sp = block.wind_speed_10m?.[i];
+            const dr = block.wind_direction_10m?.[i];
+            const sn = block.sunshine_duration?.[i];
+            if (tmp != null) g.temps.push(tmp);
+            if (pr != null) g.precips.push(pr);
+            if (sp != null) g.speeds.push(sp);
+            if (sp != null && dr != null) {
+                // Speed-weighted vector mean for wind direction so the
+                // "dominant" direction reflects when wind was actually blowing
+                // hard, not calm-noise samples near 0 m/s.
+                const rad = (dr * Math.PI) / 180;
+                g.sins.push(Math.sin(rad) * sp);
+                g.coses.push(Math.cos(rad) * sp);
             }
+            if (sn != null) g.sunshineSec.push(sn);
         });
     }
 
-    allTimes.sort();
+    const dates = Object.keys(groups).sort();
+    const aggregated = dates.map((d) => aggregateOpenMeteoDay(d, groups[d]));
 
-    const headers = ["Tanggal", ...apiVars.map(varHeader)];
-    const rows = allTimes.map((t) => [t, ...apiVars.map((v) => allRows[t]?.[v] ?? null)]);
+    const headers = [
+        "Tanggal",
+        ...OPENMETEO_DAILY_COLS.map((c) => `${c.label} (${c.unit})`),
+    ];
+    const rows = aggregated.map((a) => [
+        a.date,
+        ...OPENMETEO_DAILY_COLS.map((c) => a[c.key] ?? null),
+    ]);
 
-    // Wind rows for windrose. Wind speed is already in m/s thanks to
-    // `wind_speed_unit=ms`; one observation per day.
+    // One windrose observation per day, using the speed-weighted dominant
+    // direction and the daily mean speed. Speeds are already in m/s.
     const windRows = [];
-    for (const t of allTimes) {
-        const r = allRows[t];
-        const d = r.wind_direction_10m_dominant;
-        const s = r.wind_speed_10m_max;
+    for (const a of aggregated) {
+        const d = a.wind_direction_10m_dominant;
+        const s = a.wind_speed_10m_mean;
         if (d != null && s != null) windRows.push({ dir: d, spd: s });
     }
 
@@ -521,9 +539,31 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
             endDate,
             granularity: "daily",
             timezone,
-            apiVars,
             sources: segments.map((s) => s.kind),
         },
+    };
+}
+
+function aggregateOpenMeteoDay(date, g) {
+    const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
+    const mean = (a) => (a.length ? sum(a) / a.length : null);
+    const round = (v, n) => (v == null ? null : Number(v.toFixed(n)));
+
+    let dirMean = null;
+    if (g.sins.length) {
+        const sx = sum(g.sins);
+        const cx = sum(g.coses);
+        if (sx != null && cx != null && (sx !== 0 || cx !== 0)) {
+            dirMean = ((Math.atan2(sx, cx) * 180) / Math.PI + 360) % 360;
+        }
+    }
+    return {
+        date,
+        temperature_2m_mean: round(mean(g.temps), 2),
+        precipitation_sum: round(sum(g.precips), 2),
+        wind_speed_10m_mean: round(mean(g.speeds), 2),
+        wind_direction_10m_dominant: dirMean == null ? null : Math.round(dirMean),
+        sunshine_duration_h: round((sum(g.sunshineSec) ?? 0) / 3600, 2),
     };
 }
 
@@ -532,21 +572,12 @@ function parseLocalDate(s) {
     return new Date(y, m - 1, d);
 }
 
-function varHeader(v) {
-    if (DAILY_LABEL[v]) {
-        const m = DAILY_LABEL[v];
-        return m.unit ? `${m.label} (${m.unit})` : m.label;
-    }
-    return v;
-}
-
 async function callOpenMeteo({
     kind,
     latitude,
     longitude,
     startDate,
     endDate,
-    apiVars,
     timezone,
 }) {
     const base = kind === "archive" ? ARCHIVE_URL : FORECAST_URL;
@@ -559,7 +590,7 @@ async function callOpenMeteo({
         wind_speed_unit: "ms",
         timeformat: "iso8601",
     });
-    params.set("daily", apiVars.join(","));
+    params.set("hourly", OPENMETEO_HOURLY_VARS.join(","));
     const url = `${base}?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {
@@ -682,12 +713,35 @@ async function fetchMeteostat({ station, startDate, endDate }) {
     }
     const data = await res.json();
     // data.columns: ["time", "tavg", "tmin", ...]; data.rows: array of arrays.
-    // Wind speeds are already converted to m/s by the backend.
-    const headers = data.columns.map((c) => {
-        if (c === "time") return "Tanggal";
-        const m = METEOSTAT_META[c];
-        if (!m) return c;
-        return m.unit ? `${m.label} (${m.unit})` : m.label;
+    // Wind speeds are already in m/s thanks to the backend km/h -> m/s
+    // conversion. Sunshine duration (`tsun`) comes back in minutes and we
+    // convert to hours here. We filter the response down to the five
+    // user-requested variables (tavg, prcp, wspd, wdir, tsun_h).
+    const timeIdx = data.columns.indexOf("time");
+    const colIdx = {};
+    for (const c of METEOSTAT_DISPLAY_COLS) {
+        const src = c.src === "tsun_h" ? "tsun" : c.src;
+        colIdx[c.src] = data.columns.indexOf(src);
+    }
+    const round2 = (v) => (v == null ? null : Number(Number(v).toFixed(2)));
+
+    const headers = [
+        "Tanggal",
+        ...METEOSTAT_DISPLAY_COLS.map((c) => `${c.label} (${c.unit})`),
+    ];
+
+    const rows = data.rows.map((r) => {
+        const out = [timeIdx >= 0 ? r[timeIdx] : null];
+        for (const c of METEOSTAT_DISPLAY_COLS) {
+            const idx = colIdx[c.src];
+            const raw = idx >= 0 ? r[idx] : null;
+            if (c.src === "tsun_h") {
+                out.push(raw == null ? null : round2(raw / 60));
+            } else {
+                out.push(raw == null ? null : raw);
+            }
+        }
+        return out;
     });
 
     const dirIdx = data.columns.indexOf("wdir");
@@ -704,7 +758,7 @@ async function fetchMeteostat({ station, startDate, endDate }) {
     return {
         source: "meteostat",
         headers,
-        rows: data.rows,
+        rows,
         windRows,
         meta: {
             kind: "meteostat",
@@ -808,6 +862,14 @@ function exportXlsx(result) {
 }
 
 function buildMetaRows(result) {
+    const variableList = [
+        "1. Suhu rata-rata (°C)",
+        "2. Curah hujan / presipitasi (mm)",
+        "3. Kecepatan angin rata-rata (m/s)",
+        "4. Arah angin dominan (°, 0–360)",
+        "5. Lama penyinaran matahari (jam)",
+    ].join(" | ");
+
     if (result.source === "power") {
         const c = result.meta.city;
         const cityParts = [c.name];
@@ -827,6 +889,13 @@ function buildMetaRows(result) {
             ["Tanggal akhir", result.meta.endDate],
             ["Granularitas", "daily"],
             ["Satuan kecepatan angin", "m/s"],
+            ["Variabel", variableList],
+            [
+                "Catatan penyinaran",
+                "NASA POWER tidak menyediakan kolom 'sunshine duration' langsung. " +
+                    "Kolom 'Lama penyinaran' diisi dengan radiasi GHI all-sky " +
+                    "(ALLSKY_SFC_SW_DWN, kWh/m²/hari) sebagai proxy energi penyinaran.",
+            ],
             ["Time standard", result.meta.timeStandard || "UTC"],
             ["Diunduh pada", new Date().toISOString()],
         ];
@@ -849,6 +918,12 @@ function buildMetaRows(result) {
             ["Tanggal akhir", result.meta.endDate],
             ["Granularitas", "daily"],
             ["Satuan kecepatan angin", "m/s"],
+            ["Variabel", variableList],
+            [
+                "Catatan penyinaran",
+                "Lama penyinaran berasal dari kolom Meteostat 'tsun' (menit) " +
+                    "yang dikonversi ke jam (÷60).",
+            ],
             ["Diunduh pada", new Date().toISOString()],
         ];
     }
@@ -868,6 +943,13 @@ function buildMetaRows(result) {
         ["Tanggal akhir", result.meta.endDate],
         ["Granularitas", result.meta.granularity],
         ["Satuan kecepatan angin", "m/s"],
+        ["Variabel", variableList],
+        [
+            "Catatan agregasi",
+            "Nilai harian dihitung dari data hourly Open-Meteo: suhu = mean, " +
+                "curah hujan = sum, kecepatan angin = mean, arah angin = " +
+                "speed-weighted vector mean, lama penyinaran = sum (detik) ÷ 3600.",
+        ],
         ["Sumber data", result.meta.sources.join(" + ")],
         ["Diunduh pada", new Date().toISOString()],
     ];

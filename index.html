@@ -127,22 +127,31 @@
 
             <section id="vars-section" class="card">
                 <h2>4. Variabel Cuaca</h2>
+                <p class="muted">
+                    Lima variabel harian yang diekspor (sama untuk semua sumber):
+                    <strong>suhu rata-rata (°C)</strong>,
+                    <strong>curah hujan / presipitasi (mm)</strong>,
+                    <strong>kecepatan angin rata-rata (m/s)</strong>,
+                    <strong>arah angin dominan (°)</strong>, dan
+                    <strong>lama penyinaran matahari (jam)</strong>.
+                </p>
                 <p class="muted" id="vars-help-openmeteo">
-                    Open-Meteo (harian): suhu maks/min (°C), presipitasi total (mm),
-                    kecepatan angin 10 m maks (m/s), arah angin dominan (°), hembusan angin maks
-                    (m/s), kode cuaca (WMO).
+                    Open-Meteo: data hourly diunduh lalu diagregasi ke harian di sisi
+                    klien — suhu &amp; angin pakai rata-rata, presipitasi pakai total,
+                    arah angin pakai speed-weighted vector mean, penyinaran pakai
+                    total detik ÷ 3600.
                 </p>
                 <p class="muted" id="vars-help-meteostat" hidden>
-                    Meteostat (harian): suhu rata-rata/min/maks, presipitasi total, salju,
-                    arah/kecepatan angin rata-rata (m/s), hembusan angin peak (m/s), tekanan,
-                    sunshine.
+                    Meteostat: kolom <code>tavg</code>, <code>prcp</code>,
+                    <code>wspd</code>, <code>wdir</code>, <code>tsun</code> (menit
+                    → dikonversi ke jam).
                 </p>
                 <p class="muted" id="vars-help-power" hidden>
-                    NASA POWER (harian): suhu (T2M), kelembaban (RH2M), presipitasi (PRECTOTCORR),
-                    tutupan awan (CLOUD_AMT), kecepatan/arah angin 10 m (WS10M/WD10M, m/s), serta
-                    radiasi surya — GHI (ALLSKY_SFC_SW_DWN), DNI (ALLSKY_SFC_SW_DNI), DHI
-                    (ALLSKY_SFC_SW_DIFF), clearsky GHI, dan PAR (ALLSKY_SFC_PAR_TOT) sebagai
-                    rata-rata/total harian.
+                    NASA POWER: <code>T2M</code>, <code>PRECTOTCORR</code>,
+                    <code>WS10M</code>, <code>WD10M</code>. NASA POWER tidak menyediakan
+                    kolom sunshine duration langsung — kolom &ldquo;Lama penyinaran&rdquo;
+                    diisi <strong>radiasi GHI all-sky (<code>ALLSKY_SFC_SW_DWN</code>,
+                    kWh/m²/hari)</strong> sebagai proxy energi penyinaran.
                 </p>
             </section>
 

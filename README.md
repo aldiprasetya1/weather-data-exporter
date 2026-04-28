@@ -13,10 +13,17 @@ Aplikasi web untuk mengambil data cuaca per kota / stasiun dari tiga sumber publ
 - Pratinjau 50 baris pertama sebelum unduh.
 - Output Excel `.xlsx` berisi 2 sheet: **Data** + **Info** (metadata: kota/stasiun, koordinat, periode, sumber, dll.).
 - **Windrose** — diagram polar frekuensi arah & kecepatan angin (16 sektor × 7 bin kecepatan dalam m/s: 0–1, 1–3, 3–5, 5–7, 7–9, 9–11, 11+), dengan toggle **Blowing FROM** (asal angin, konvensi meteorologi) / **Blowing TO** (arah hembusan), dan tombol unduh PNG (resolusi 900×800).
-- Variabel cuaca (set tetap, harian):
-  - Open-Meteo: suhu maks/min, presipitasi total, kecepatan angin 10 m maks (m/s), arah angin dominan, hembusan angin maks (m/s), kode cuaca WMO.
-  - Meteostat: suhu rata-rata/min/maks, presipitasi total, salju, arah/kecepatan angin (m/s), hembusan angin peak (m/s), tekanan, sunshine.
-  - NASA POWER: T2M, RH2M, PRECTOTCORR, PS, CLOUD_AMT, WS10M / WD10M (m/s), WS50M / WD50M (m/s), ALLSKY_SFC_SW_DWN (GHI), ALLSKY_SFC_SW_DNI (DNI), ALLSKY_SFC_SW_DIFF (DHI), CLRSKY_SFC_SW_DWN (clearsky GHI), ALLSKY_SFC_PAR_TOT (PAR).
+- Variabel cuaca (lima kolom harian, sama untuk semua sumber):
+  1. **Suhu rata-rata** (°C)
+  2. **Curah hujan / presipitasi** (mm)
+  3. **Kecepatan angin rata-rata** (m/s)
+  4. **Arah angin dominan** (°, 0–360)
+  5. **Lama penyinaran matahari** (jam)
+
+  Pemetaan per sumber:
+  - **Open-Meteo**: data hourly diunduh lalu diagregasi ke harian di sisi klien — suhu = mean, presipitasi = sum, kecepatan angin = mean, arah angin = speed-weighted vector mean, lama penyinaran = `sunshine_duration` hourly (detik) ÷ 3600.
+  - **Meteostat**: kolom `tavg`, `prcp`, `wspd` (sudah m/s), `wdir`, `tsun` (menit → dikonversi ke jam).
+  - **NASA POWER**: `T2M`, `PRECTOTCORR`, `WS10M`, `WD10M`. NASA POWER tidak menyediakan parameter sunshine duration langsung — kolom "Lama penyinaran" diisi **radiasi GHI all-sky** (`ALLSKY_SFC_SW_DWN`, kWh/m²/hari) sebagai proxy energi penyinaran (didokumentasikan di sheet Info).
 
 ## Cara pakai (lokal)
 
