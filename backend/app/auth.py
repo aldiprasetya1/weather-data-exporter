@@ -25,6 +25,7 @@ TOKEN_PREFIX = "wde_"
 ALLOWED_DAYS = (1, 7, 30)
 
 _lock = threading.Lock()
+_admin_secret_cache: str | None = None
 
 
 def _ensure_dir() -> None:
@@ -204,14 +205,19 @@ def _read_admin_secret() -> str:
     the value is logged once at startup so the operator can see it via
     `fly logs`.
     """
+    global _admin_secret_cache
+    if _admin_secret_cache:
+        return _admin_secret_cache
     s = os.environ.get("ADMIN_SECRET", "").strip()
     if s:
+        _admin_secret_cache = s
         return s
     persistent = DB_PATH.parent / "admin_secret.txt"
     if persistent.exists():
         try:
             v = persistent.read_text().strip()
             if v:
+                _admin_secret_cache = v
                 return v
         except OSError:
             pass
@@ -220,12 +226,16 @@ def _read_admin_secret() -> str:
         try:
             v = shipped.read_text().strip()
             if v:
+                _admin_secret_cache = v
                 return v
         except OSError:
             pass
-    # Generate-on-first-boot. Persist next to the SQLite DB.
+    # Generate-on-first-boot. Persist next to the SQLite DB. Cache so a
+    # write failure does not produce a different secret on every call —
+    # otherwise the value logged at startup would never validate.
     _ensure_dir()
     new_secret = secrets.token_urlsafe(32)
+    _admin_secret_cache = new_secret
     try:
         persistent.write_text(new_secret)
         # Be loud so the operator can fish it out of `fly logs`.
@@ -235,7 +245,10 @@ def _read_admin_secret() -> str:
             flush=True,
         )
     except OSError as exc:
-        print(f"[auth] failed to persist admin secret: {exc}", flush=True)
+        print(
+            f"[auth] failed to persist admin secret (cached in memory only): {exc}",
+            flush=True,
+        )
     return new_secret
 
 

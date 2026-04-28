@@ -31,7 +31,7 @@ _POWER_DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 
 
 async def _proxy_get(url: str, params: list[tuple[str, str]]) -> Any:
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
         try:
             resp = await client.get(url, params=params)
         except httpx.HTTPError as exc:

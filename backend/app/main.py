@@ -188,7 +188,7 @@ async def hourly(
                 if start <= r["date"] <= end:
                     rows.append(r)
 
-    rows.sort(key=lambda r: (r["date"], r["hour"]))
+    rows.sort(key=lambda r: (r["date"], int(r["hour"]) if r["hour"] is not None else -1))
 
     out_cols = ["time"] + [c for c in METEOSTAT_HOURLY_COLS if c not in {"date", "hour"}]
     out_rows = []
