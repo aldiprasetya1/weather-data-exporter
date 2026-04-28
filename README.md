@@ -11,7 +11,7 @@ Aplikasi web untuk mengambil data cuaca per kota / stasiun dari tiga sumber publ
 - Pencarian kota dengan autocomplete (Open-Meteo Geocoding, dipakai untuk Open-Meteo & POWER) atau pencarian stasiun (Meteostat).
 - Pratinjau 50 baris pertama sebelum unduh.
 - Output Excel `.xlsx` berisi 2 sheet: **Data** + **Info** (metadata: kota/stasiun, koordinat, periode, sumber, dll.).
-- **Windrose** — diagram polar frekuensi arah & kecepatan angin (16 sektor × 7 bin kecepatan), dengan tombol unduh PNG (resolusi 900×800). Untuk POWER, kecepatan angin dikonversi dari m/s → km/jam supaya konsisten dengan dua sumber lain.
+- **Windrose** — diagram polar frekuensi arah & kecepatan angin (16 sektor × 7 bin kecepatan dalam m/s: 0–1, 1–3, 3–5, 5–7, 7–9, 9–11, 11+), dengan tombol unduh PNG (resolusi 900×800). Open-Meteo & Meteostat dikonversi dari km/jam → m/s; POWER langsung m/s.
 - Variabel cuaca:
   - Open-Meteo: suhu, kelembaban, presipitasi, tutupan awan total/rendah/menengah/tinggi, kecepatan/arah/hembusan angin 10m, tekanan, kode cuaca WMO
   - Meteostat: suhu, dew point, kelembaban, presipitasi, salju, arah/kecepatan/hembusan angin, tekanan, sunshine, kode cuaca

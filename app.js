@@ -514,7 +514,7 @@ async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity
     const headers = ["Waktu", ...apiVars.map(varHeader)];
     const rows = allTimes.map((t) => [t, ...apiVars.map((v) => allRows[t]?.[v] ?? null)]);
 
-    // Wind rows for windrose
+    // Wind rows for windrose. Open-Meteo returns km/jam; convert to m/s.
     const dirIdx = apiVars.indexOf("wind_direction_10m");
     const spdIdx = apiVars.indexOf("wind_speed_10m");
     const windRows = [];
@@ -523,7 +523,7 @@ async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity
             const r = allRows[t];
             const d = r[apiVars[dirIdx]];
             const s = r[apiVars[spdIdx]];
-            if (d != null && s != null) windRows.push({ dir: d, spd: s });
+            if (d != null && s != null) windRows.push({ dir: d, spd: s / 3.6 });
         }
     }
 
@@ -664,8 +664,7 @@ async function fetchPower({ city, startDate, endDate }) {
         const d = clean(param.WD10M?.[t]);
         const sMs = clean(param.WS10M?.[t]);
         if (d != null && sMs != null) {
-            // Convert m/s -> km/jam for windrose to match other sources.
-            windRows.push({ dir: d, spd: sMs * 3.6 });
+            windRows.push({ dir: d, spd: sMs });
         }
     }
 
@@ -727,6 +726,7 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         return m.unit ? `${m.label} (${m.unit})` : m.label;
     });
 
+    // Meteostat returns wspd in km/jam; convert to m/s for windrose.
     const dirIdx = data.columns.indexOf("wdir");
     const spdIdx = data.columns.indexOf("wspd");
     const windRows = [];
@@ -734,7 +734,7 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         for (const r of data.rows) {
             const d = r[dirIdx];
             const s = r[spdIdx];
-            if (d != null && s != null) windRows.push({ dir: d, spd: s });
+            if (d != null && s != null) windRows.push({ dir: d, spd: s / 3.6 });
         }
     }
 
@@ -941,13 +941,13 @@ const WINDROSE_DIRECTIONS = [
     { theta: "NNW", deg: 337.5 },
 ];
 const WINDROSE_BINS = [
-    { label: "0–5", min: 0, max: 5, color: "#deebf7" },
-    { label: "5–10", min: 5, max: 10, color: "#9ecae1" },
-    { label: "10–15", min: 10, max: 15, color: "#6baed6" },
-    { label: "15–20", min: 15, max: 20, color: "#4292c6" },
-    { label: "20–25", min: 20, max: 25, color: "#2171b5" },
-    { label: "25–30", min: 25, max: 30, color: "#08519c" },
-    { label: "30+", min: 30, max: Infinity, color: "#08306b" },
+    { label: "0–1", min: 0, max: 1, color: "#deebf7" },
+    { label: "1–3", min: 1, max: 3, color: "#9ecae1" },
+    { label: "3–5", min: 3, max: 5, color: "#6baed6" },
+    { label: "5–7", min: 5, max: 7, color: "#4292c6" },
+    { label: "7–9", min: 7, max: 9, color: "#2171b5" },
+    { label: "9–11", min: 9, max: 11, color: "#08519c" },
+    { label: "11+", min: 11, max: Infinity, color: "#08306b" },
 ];
 
 function showWindrose() {
@@ -984,13 +984,13 @@ function showWindrose() {
 
     const traces = WINDROSE_BINS.map((bin, bi) => ({
         type: "barpolar",
-        name: `${bin.label} km/jam`,
+        name: `${bin.label} m/s`,
         r: counts[bi].map((c) => (total > 0 ? (c / total) * 100 : 0)),
         theta: WINDROSE_DIRECTIONS.map((d) => d.theta),
         marker: { color: bin.color, line: { color: "white", width: 1 } },
         hovertemplate:
             "%{theta}<br>" +
-            `${bin.label} km/jam<br>` +
+            `${bin.label} m/s<br>` +
             "%{r:.2f}% of obs<extra></extra>",
     }));
 
@@ -1015,7 +1015,7 @@ function showWindrose() {
             },
         },
         legend: {
-            title: { text: "Kecepatan angin" },
+            title: { text: "Kecepatan angin (m/s)" },
             orientation: "v",
         },
         margin: { t: 60, b: 40, l: 40, r: 120 },
@@ -1030,7 +1030,7 @@ function showWindrose() {
 
     els.windroseSection.hidden = false;
     els.windroseInfo.textContent =
-        `Total observasi: ${total} (calm ≤ 0.5 km/jam: ${calmCount} = ` +
+        `Total observasi: ${total} (calm ≤ 0.5 m/s: ${calmCount} = ` +
         `${total > 0 ? ((calmCount / total) * 100).toFixed(1) : "0"}%). ` +
         `Frekuensi tiap sektor 22.5°, dibagi per bin kecepatan.`;
     els.windroseSection.scrollIntoView({ behavior: "smooth", block: "start" });
