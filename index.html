@@ -97,13 +97,6 @@
                 </div>
                 <div class="row">
                     <div class="field">
-                        <label for="granularity">Granularitas</label>
-                        <select id="granularity">
-                            <option value="hourly" selected>Per jam (hourly)</option>
-                            <option value="daily">Per hari (daily)</option>
-                        </select>
-                    </div>
-                    <div class="field">
                         <label for="timezone">Zona waktu</label>
                         <select id="timezone">
                             <option value="auto" selected>Auto (sesuai lokasi kota)</option>
@@ -114,47 +107,42 @@
                         </select>
                     </div>
                 </div>
+                <p class="muted">
+                    Granularitas: <strong>per hari (daily)</strong>. Semua kecepatan angin
+                    di seluruh data dan windrose menggunakan satuan <strong>m/s</strong>.
+                </p>
                 <p class="muted" id="period-help-openmeteo">
                     Sumber: ERA5 reanalysis (1940 – ~5 hari yang lalu) untuk historis,
                     dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.
                 </p>
                 <p class="muted" id="period-help-meteostat" hidden>
-                    Sumber: observasi stasiun Meteostat (NOAA ISD/SYNOP). Hanya data historis
-                    (sampai ~beberapa minggu yang lalu, tergantung stasiun).
+                    Sumber: observasi stasiun Meteostat (NOAA ISD/SYNOP), data harian.
                     Maks 366 hari per request.
                 </p>
                 <p class="muted" id="period-help-power" hidden>
-                    Sumber: NASA POWER (MERRA-2 reanalysis + CERES/SYN1deg untuk radiasi). Hourly
-                    tersedia 2001-01-01 → ~3 hari yang lalu. Maks 366 hari per request.
+                    Sumber: NASA POWER (MERRA-2 reanalysis + CERES/SYN1deg untuk radiasi),
+                    data harian. Tersedia 1981-01-01 → ~2 hari yang lalu. Maks 366 hari per request.
                 </p>
             </section>
 
             <section id="vars-section" class="card">
                 <h2>4. Variabel Cuaca</h2>
-                <div class="checkbox-grid">
-                    <label class="check"><input type="checkbox" name="var" value="temperature_2m" checked> Suhu (°C)</label>
-                    <label class="check"><input type="checkbox" name="var" value="relative_humidity_2m" checked> Kelembaban (%)</label>
-                    <label class="check"><input type="checkbox" name="var" value="precipitation" checked> Presipitasi (mm)</label>
-                    <label class="check"><input type="checkbox" name="var" value="cloud_cover" checked> Tutupan awan total (%)</label>
-                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_low"> Awan rendah (%)</label>
-                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_mid"> Awan menengah (%)</label>
-                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_high"> Awan tinggi (%)</label>
-                    <label class="check"><input type="checkbox" name="var" value="wind_speed_10m" checked> Kecepatan angin 10m (km/jam)</label>
-                    <label class="check"><input type="checkbox" name="var" value="wind_direction_10m" checked> Arah angin 10m (°)</label>
-                    <label class="check"><input type="checkbox" name="var" value="wind_gusts_10m" checked> Hembusan angin 10m (km/jam)</label>
-                    <label class="check"><input type="checkbox" name="var" value="surface_pressure"> Tekanan permukaan (hPa)</label>
-                    <label class="check"><input type="checkbox" name="var" value="weather_code"> Kode cuaca (WMO)</label>
-                </div>
+                <p class="muted" id="vars-help-openmeteo">
+                    Open-Meteo (harian): suhu maks/min (°C), presipitasi total (mm),
+                    kecepatan angin 10 m maks (m/s), arah angin dominan (°), hembusan angin maks
+                    (m/s), kode cuaca (WMO).
+                </p>
                 <p class="muted" id="vars-help-meteostat" hidden>
-                    Untuk Meteostat semua variabel hourly stasiun ikut diunduh otomatis: suhu, dew point,
-                    kelembaban, presipitasi, salju, arah/kecepatan/hembusan angin, tekanan, sunshine, kode cuaca.
+                    Meteostat (harian): suhu rata-rata/min/maks, presipitasi total, salju,
+                    arah/kecepatan angin rata-rata (m/s), hembusan angin peak (m/s), tekanan,
+                    sunshine.
                 </p>
                 <p class="muted" id="vars-help-power" hidden>
-                    Untuk NASA POWER semua variabel ikut diunduh otomatis: suhu (T2M), kelembaban
-                    (RH2M), presipitasi (PRECTOTCORR), tutupan awan (CLOUD_AMT), kecepatan/arah angin
-                    10 m (WS10M/WD10M), serta radiasi surya — GHI (ALLSKY_SFC_SW_DWN), DNI
-                    (ALLSKY_SFC_SW_DNI), DHI (ALLSKY_SFC_SW_DIFF), clearsky GHI, dan PAR
-                    (ALLSKY_SFC_PAR_TOT). Windrose memakai satuan m/s.
+                    NASA POWER (harian): suhu (T2M), kelembaban (RH2M), presipitasi (PRECTOTCORR),
+                    tutupan awan (CLOUD_AMT), kecepatan/arah angin 10 m (WS10M/WD10M, m/s), serta
+                    radiasi surya — GHI (ALLSKY_SFC_SW_DWN), DNI (ALLSKY_SFC_SW_DNI), DHI
+                    (ALLSKY_SFC_SW_DIFF), clearsky GHI, dan PAR (ALLSKY_SFC_PAR_TOT) sebagai
+                    rata-rata/total harian.
                 </p>
             </section>
 
@@ -171,6 +159,17 @@
             <div class="windrose-header">
                 <h2>Windrose</h2>
                 <button id="windrose-download" type="button">⬇ Unduh PNG</button>
+            </div>
+            <div class="windrose-controls">
+                <span class="muted">Mode:</span>
+                <label class="radio inline">
+                    <input type="radio" name="windrose-mode" value="from" checked />
+                    <span><strong>Blowing FROM</strong> <em class="muted">— asal angin (konvensi meteorologi)</em></span>
+                </label>
+                <label class="radio inline">
+                    <input type="radio" name="windrose-mode" value="to" />
+                    <span><strong>Blowing TO</strong> <em class="muted">— arah hembusan</em></span>
+                </label>
             </div>
             <div id="windrose-info" class="muted"></div>
             <div id="windrose-chart" class="windrose-chart"></div>

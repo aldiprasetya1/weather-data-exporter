@@ -5,75 +5,68 @@
 const GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
-const POWER_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point";
+const POWER_URL = "https://power.larc.nasa.gov/api/temporal/daily/point";
 const POWER_FILL = -999.0;
 
 const BACKEND_URL =
     (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "http://localhost:8001";
 
-// Open-Meteo variable metadata.
-const VARIABLE_META = {
-    temperature_2m: { label: "Suhu", unit: "°C", daily: "temperature_2m_mean" },
-    relative_humidity_2m: { label: "Kelembaban", unit: "%", daily: null },
-    precipitation: { label: "Presipitasi", unit: "mm", daily: "precipitation_sum" },
-    cloud_cover: { label: "Tutupan awan", unit: "%", daily: null },
-    cloud_cover_low: { label: "Awan rendah", unit: "%", daily: null },
-    cloud_cover_mid: { label: "Awan menengah", unit: "%", daily: null },
-    cloud_cover_high: { label: "Awan tinggi", unit: "%", daily: null },
-    wind_speed_10m: { label: "Kecepatan angin 10m", unit: "km/jam", daily: "wind_speed_10m_max" },
-    wind_direction_10m: {
-        label: "Arah angin 10m",
-        unit: "°",
-        daily: "wind_direction_10m_dominant",
-    },
-    wind_gusts_10m: { label: "Hembusan angin 10m", unit: "km/jam", daily: "wind_gusts_10m_max" },
-    surface_pressure: { label: "Tekanan permukaan", unit: "hPa", daily: null },
-    weather_code: { label: "Kode cuaca (WMO)", unit: "", daily: "weather_code" },
-};
+// Open-Meteo daily variables fetched for every request. Wind speeds are
+// requested in m/s via the `wind_speed_unit=ms` query parameter.
+const OPENMETEO_DAILY_VARS = [
+    "temperature_2m_max",
+    "temperature_2m_min",
+    "precipitation_sum",
+    "wind_speed_10m_max",
+    "wind_direction_10m_dominant",
+    "wind_gusts_10m_max",
+    "weather_code",
+];
 
+// Daily-aggregate label & unit metadata for Open-Meteo.
 const DAILY_LABEL = {
     temperature_2m_mean: { label: "Suhu rata-rata", unit: "°C" },
     temperature_2m_max: { label: "Suhu maks", unit: "°C" },
     temperature_2m_min: { label: "Suhu min", unit: "°C" },
     precipitation_sum: { label: "Total presipitasi", unit: "mm" },
-    wind_speed_10m_max: { label: "Kecepatan angin maks", unit: "km/jam" },
-    wind_gusts_10m_max: { label: "Hembusan angin maks", unit: "km/jam" },
+    wind_speed_10m_max: { label: "Kecepatan angin maks", unit: "m/s" },
+    wind_gusts_10m_max: { label: "Hembusan angin maks", unit: "m/s" },
     wind_direction_10m_dominant: { label: "Arah angin dominan", unit: "°" },
     weather_code: { label: "Kode cuaca (WMO)", unit: "" },
 };
 
-// Meteostat hourly column metadata. Keys must match the backend response.
+// Meteostat daily column metadata. Keys must match the backend `/daily/` response.
+// Wind speeds (`wspd`, `wpgt`) are converted to m/s in the backend.
 const METEOSTAT_META = {
-    temp: { label: "Suhu", unit: "°C" },
-    dwpt: { label: "Dew point", unit: "°C" },
-    rhum: { label: "Kelembaban", unit: "%" },
+    tavg: { label: "Suhu rata-rata", unit: "°C" },
+    tmin: { label: "Suhu min", unit: "°C" },
+    tmax: { label: "Suhu maks", unit: "°C" },
     prcp: { label: "Presipitasi", unit: "mm" },
     snow: { label: "Salju", unit: "mm" },
     wdir: { label: "Arah angin", unit: "°" },
-    wspd: { label: "Kecepatan angin", unit: "km/jam" },
-    wpgt: { label: "Hembusan angin (peak)", unit: "km/jam" },
+    wspd: { label: "Kecepatan angin", unit: "m/s" },
+    wpgt: { label: "Hembusan angin (peak)", unit: "m/s" },
     pres: { label: "Tekanan", unit: "hPa" },
     tsun: { label: "Sunshine", unit: "menit" },
-    coco: { label: "Kode cuaca", unit: "" },
 };
 
 // NASA POWER parameter metadata. Order here defines column order in the export.
-// All values are hourly (UTC time-standard).
+// All values are daily aggregates (UTC).
 const POWER_PARAMS = [
     { key: "T2M", label: "Suhu (2 m)", unit: "°C" },
     { key: "RH2M", label: "Kelembaban (2 m)", unit: "%" },
-    { key: "PRECTOTCORR", label: "Presipitasi", unit: "mm/jam" },
+    { key: "PRECTOTCORR", label: "Presipitasi", unit: "mm/hari" },
     { key: "PS", label: "Tekanan permukaan", unit: "kPa" },
     { key: "CLOUD_AMT", label: "Tutupan awan", unit: "%" },
     { key: "WS10M", label: "Kecepatan angin (10 m)", unit: "m/s" },
     { key: "WD10M", label: "Arah angin (10 m)", unit: "°" },
     { key: "WS50M", label: "Kecepatan angin (50 m)", unit: "m/s" },
     { key: "WD50M", label: "Arah angin (50 m)", unit: "°" },
-    { key: "ALLSKY_SFC_SW_DWN", label: "GHI (all-sky)", unit: "Wh/m²" },
-    { key: "ALLSKY_SFC_SW_DNI", label: "DNI (all-sky)", unit: "Wh/m²" },
-    { key: "ALLSKY_SFC_SW_DIFF", label: "DHI (all-sky)", unit: "Wh/m²" },
-    { key: "CLRSKY_SFC_SW_DWN", label: "GHI (clearsky)", unit: "Wh/m²" },
-    { key: "ALLSKY_SFC_PAR_TOT", label: "PAR (all-sky)", unit: "W/m²" },
+    { key: "ALLSKY_SFC_SW_DWN", label: "GHI (all-sky)", unit: "kWh/m²/hari" },
+    { key: "ALLSKY_SFC_SW_DNI", label: "DNI (all-sky)", unit: "kWh/m²/hari" },
+    { key: "ALLSKY_SFC_SW_DIFF", label: "DHI (all-sky)", unit: "kWh/m²/hari" },
+    { key: "CLRSKY_SFC_SW_DWN", label: "GHI (clearsky)", unit: "kWh/m²/hari" },
+    { key: "ALLSKY_SFC_PAR_TOT", label: "PAR (all-sky)", unit: "MJ/m²/hari" },
 ];
 
 const state = {
@@ -82,6 +75,7 @@ const state = {
     selectedStation: null,
     stations: [],
     lastResult: null, // {headers, rows, meta, windRows: [{dir, spd}]}
+    windroseMode: "from", // "from" (asal angin) | "to" (arah hembusan)
 };
 
 const els = {};
@@ -97,12 +91,12 @@ document.addEventListener("DOMContentLoaded", () => {
     els.selectedStation = document.getElementById("selected-station");
     els.startDate = document.getElementById("start-date");
     els.endDate = document.getElementById("end-date");
-    els.granularity = document.getElementById("granularity");
     els.timezone = document.getElementById("timezone");
     els.periodHelpOM = document.getElementById("period-help-openmeteo");
     els.periodHelpMS = document.getElementById("period-help-meteostat");
     els.periodHelpPW = document.getElementById("period-help-power");
     els.varsSection = document.getElementById("vars-section");
+    els.varsHelpOM = document.getElementById("vars-help-openmeteo");
     els.varsHelpMS = document.getElementById("vars-help-meteostat");
     els.varsHelpPW = document.getElementById("vars-help-power");
     els.previewBtn = document.getElementById("preview-btn");
@@ -117,6 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
     els.windroseInfo = document.getElementById("windrose-info");
     els.windroseChart = document.getElementById("windrose-chart");
     els.windroseDownload = document.getElementById("windrose-download");
+    els.windroseModeRadios = document.querySelectorAll('input[name="windrose-mode"]');
 
     const today = new Date();
     const weekAgo = new Date();
@@ -135,6 +130,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     els.windroseBtn.addEventListener("click", showWindrose);
     els.windroseDownload.addEventListener("click", downloadWindrosePNG);
+    els.windroseModeRadios.forEach((r) =>
+        r.addEventListener("change", () => {
+            state.windroseMode = r.value;
+            // Re-render only if a windrose was already shown for current data.
+            if (state.lastResult && !els.windroseSection.hidden) {
+                showWindrose();
+            }
+        })
+    );
 });
 
 function isoDate(d) {
@@ -179,22 +183,12 @@ function updateSourceUI() {
     els.periodHelpOM.hidden = !isOM;
     els.periodHelpMS.hidden = !isMS;
     if (els.periodHelpPW) els.periodHelpPW.hidden = !isPW;
-    // Variable picker is only used for Open-Meteo. POWER and Meteostat fetch fixed sets.
-    els.varsSection.hidden = !isOM;
-    els.varsHelpMS.hidden = true;
-    if (els.varsHelpPW) els.varsHelpPW.hidden = true;
-    if (isMS) els.varsHelpMS.hidden = false;
-    if (isPW && els.varsHelpPW) els.varsHelpPW.hidden = false;
-    // Show the vars-section just to render the help text for MS / PW.
-    if (isMS || isPW) els.varsSection.hidden = false;
-    // Hide the actual checkbox grid for MS / PW.
-    const grid = els.varsSection.querySelector(".checkbox-grid");
-    if (grid) grid.style.display = isOM ? "" : "none";
-
-    // Granularity: only Open-Meteo supports daily in this build.
-    const dailyOpt = els.granularity.querySelector('option[value="daily"]');
-    if (dailyOpt) dailyOpt.disabled = !isOM;
-    if (!isOM) els.granularity.value = "hourly";
+    // All three sources now fetch fixed daily variable sets; show the
+    // matching help text for the selected source.
+    if (els.varsHelpOM) els.varsHelpOM.hidden = !isOM;
+    els.varsHelpMS.hidden = !isMS;
+    if (els.varsHelpPW) els.varsHelpPW.hidden = !isPW;
+    els.varsSection.hidden = false;
 
     if (isMS && !state.stations.length) {
         loadStations();
@@ -407,18 +401,10 @@ async function handleSubmit({ download }) {
             if (!state.selectedCity) {
                 throw new Error("Pilih kota dulu dari saran pencarian.");
             }
-            const selectedVars = Array.from(
-                document.querySelectorAll('input[name="var"]:checked')
-            ).map((i) => i.value);
-            if (!selectedVars.length) {
-                throw new Error("Pilih minimal satu variabel cuaca.");
-            }
             result = await fetchOpenMeteo({
                 city: state.selectedCity,
                 startDate,
                 endDate,
-                variables: selectedVars,
-                granularity: els.granularity.value,
                 timezone: els.timezone.value,
             });
         }
@@ -459,7 +445,7 @@ function showStatus(msg, type = "info") {
 
 // ----- Open-Meteo fetch -----
 
-async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity, timezone }) {
+async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const archiveCutoff = new Date(today);
@@ -468,7 +454,7 @@ async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity
     const start = parseLocalDate(startDate);
     const end = parseLocalDate(endDate);
 
-    const apiVars = mapVariables(variables, granularity);
+    const apiVars = OPENMETEO_DAILY_VARS.slice();
 
     const segments = [];
     if (end < archiveCutoff) {
@@ -493,10 +479,9 @@ async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity
             startDate: isoDate(seg.start),
             endDate: isoDate(seg.end),
             apiVars,
-            granularity,
             timezone,
         });
-        const block = data[granularity];
+        const block = data.daily;
         if (!block || !block.time) continue;
         block.time.forEach((t, i) => {
             if (!(t in allRows)) {
@@ -511,20 +496,17 @@ async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity
 
     allTimes.sort();
 
-    const headers = ["Waktu", ...apiVars.map(varHeader)];
+    const headers = ["Tanggal", ...apiVars.map(varHeader)];
     const rows = allTimes.map((t) => [t, ...apiVars.map((v) => allRows[t]?.[v] ?? null)]);
 
-    // Wind rows for windrose. Open-Meteo returns km/jam; convert to m/s.
-    const dirIdx = apiVars.indexOf("wind_direction_10m");
-    const spdIdx = apiVars.indexOf("wind_speed_10m");
+    // Wind rows for windrose. Wind speed is already in m/s thanks to
+    // `wind_speed_unit=ms`; one observation per day.
     const windRows = [];
-    if (dirIdx >= 0 && spdIdx >= 0) {
-        for (const t of allTimes) {
-            const r = allRows[t];
-            const d = r[apiVars[dirIdx]];
-            const s = r[apiVars[spdIdx]];
-            if (d != null && s != null) windRows.push({ dir: d, spd: s / 3.6 });
-        }
+    for (const t of allTimes) {
+        const r = allRows[t];
+        const d = r.wind_direction_10m_dominant;
+        const s = r.wind_speed_10m_max;
+        if (d != null && s != null) windRows.push({ dir: d, spd: s });
     }
 
     return {
@@ -537,7 +519,7 @@ async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity
             city,
             startDate,
             endDate,
-            granularity,
+            granularity: "daily",
             timezone,
             apiVars,
             sources: segments.map((s) => s.kind),
@@ -550,27 +532,9 @@ function parseLocalDate(s) {
     return new Date(y, m - 1, d);
 }
 
-function mapVariables(selected, granularity) {
-    if (granularity === "hourly") return selected.slice();
-    const out = [];
-    for (const v of selected) {
-        const meta = VARIABLE_META[v];
-        if (!meta) continue;
-        if (meta.daily) {
-            if (!out.includes(meta.daily)) out.push(meta.daily);
-        }
-    }
-    if (!out.length) out.push("temperature_2m_mean", "precipitation_sum");
-    return out;
-}
-
 function varHeader(v) {
     if (DAILY_LABEL[v]) {
         const m = DAILY_LABEL[v];
-        return m.unit ? `${m.label} (${m.unit})` : m.label;
-    }
-    if (VARIABLE_META[v]) {
-        const m = VARIABLE_META[v];
         return m.unit ? `${m.label} (${m.unit})` : m.label;
     }
     return v;
@@ -583,7 +547,6 @@ async function callOpenMeteo({
     startDate,
     endDate,
     apiVars,
-    granularity,
     timezone,
 }) {
     const base = kind === "archive" ? ARCHIVE_URL : FORECAST_URL;
@@ -593,10 +556,10 @@ async function callOpenMeteo({
         start_date: startDate,
         end_date: endDate,
         timezone: timezone || "auto",
-        wind_speed_unit: "kmh",
+        wind_speed_unit: "ms",
         timeformat: "iso8601",
     });
-    params.set(granularity, apiVars.join(","));
+    params.set("daily", apiVars.join(","));
     const url = `${base}?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {
@@ -615,7 +578,7 @@ async function callOpenMeteo({
 // ----- NASA POWER fetch -----
 
 async function fetchPower({ city, startDate, endDate }) {
-    // POWER hourly endpoint expects YYYYMMDD strings.
+    // POWER daily endpoint expects YYYYMMDD strings; no time-standard.
     const compact = (s) => s.replace(/-/g, "");
     const params = new URLSearchParams({
         parameters: POWER_PARAMS.map((p) => p.key).join(","),
@@ -625,7 +588,6 @@ async function fetchPower({ city, startDate, endDate }) {
         start: compact(startDate),
         end: compact(endDate),
         format: "JSON",
-        "time-standard": "UTC",
     });
     const url = `${POWER_URL}?${params.toString()}`;
     const res = await fetch(url);
@@ -651,11 +613,11 @@ async function fetchPower({ city, startDate, endDate }) {
     const times = Array.from(tset).sort();
 
     const headers = [
-        "Waktu (UTC)",
+        "Tanggal (UTC)",
         ...POWER_PARAMS.map((p) => `${p.label} (${p.unit})`),
     ];
     const rows = times.map((t) => {
-        const iso = powerKeyToIso(t);
+        const iso = powerDailyKeyToIso(t);
         return [iso, ...POWER_PARAMS.map((p) => clean(param[p.key]?.[t]))];
     });
 
@@ -681,6 +643,7 @@ async function fetchPower({ city, startDate, endDate }) {
             city,
             startDate,
             endDate,
+            granularity: "daily",
             elevation: elev,
             sources: (data.header && data.header.sources) || [],
             apiVersion: data.header && data.header.api && data.header.api.version,
@@ -695,16 +658,16 @@ function clean(v) {
     return v;
 }
 
-function powerKeyToIso(t) {
-    // "2025010100" -> "2025-01-01T00:00"
-    if (!/^\d{10}$/.test(t)) return t;
-    return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}T${t.slice(8, 10)}:00`;
+function powerDailyKeyToIso(t) {
+    // POWER daily keys are "YYYYMMDD" -> "YYYY-MM-DD".
+    if (!/^\d{8}$/.test(t)) return t;
+    return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
 }
 
 // ----- Meteostat fetch (via backend) -----
 
 async function fetchMeteostat({ station, startDate, endDate }) {
-    const url = `${BACKEND_URL}/hourly/${encodeURIComponent(station.id)}` +
+    const url = `${BACKEND_URL}/daily/${encodeURIComponent(station.id)}` +
         `?start=${startDate}&end=${endDate}`;
     const res = await fetch(url);
     if (!res.ok) {
@@ -718,15 +681,15 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         throw new Error(`Backend HTTP ${res.status}: ${detail}`);
     }
     const data = await res.json();
-    // data.columns: ["time", "temp", "dwpt", ...]; data.rows: array of arrays.
+    // data.columns: ["time", "tavg", "tmin", ...]; data.rows: array of arrays.
+    // Wind speeds are already converted to m/s by the backend.
     const headers = data.columns.map((c) => {
-        if (c === "time") return "Waktu";
+        if (c === "time") return "Tanggal";
         const m = METEOSTAT_META[c];
         if (!m) return c;
         return m.unit ? `${m.label} (${m.unit})` : m.label;
     });
 
-    // Meteostat returns wspd in km/jam; convert to m/s for windrose.
     const dirIdx = data.columns.indexOf("wdir");
     const spdIdx = data.columns.indexOf("wspd");
     const windRows = [];
@@ -734,7 +697,7 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         for (const r of data.rows) {
             const d = r[dirIdx];
             const s = r[spdIdx];
-            if (d != null && s != null) windRows.push({ dir: d, spd: s / 3.6 });
+            if (d != null && s != null) windRows.push({ dir: d, spd: s });
         }
     }
 
@@ -748,6 +711,7 @@ async function fetchMeteostat({ station, startDate, endDate }) {
             station,
             startDate,
             endDate,
+            granularity: "daily",
             columns: data.columns,
         },
     };
@@ -804,7 +768,7 @@ function describeResult(result) {
             `Stasiun: ${s.name} (WMO ${wmo}` +
             (s.icao ? ` / ${s.icao}` : "") +
             `) · Periode: ${result.meta.startDate} → ${result.meta.endDate}` +
-            ` · Sumber: Meteostat (NOAA ISD/SYNOP) · Total baris: ${result.rows.length}`
+            ` · Sumber: Meteostat (NOAA ISD/SYNOP, harian) · Total baris: ${result.rows.length}`
         );
     }
     const c = result.meta.city;
@@ -861,7 +825,8 @@ function buildMetaRows(result) {
             ["Elevasi grid (m)", result.meta.elevation ?? ""],
             ["Tanggal mulai", result.meta.startDate],
             ["Tanggal akhir", result.meta.endDate],
-            ["Granularitas", "hourly"],
+            ["Granularitas", "daily"],
+            ["Satuan kecepatan angin", "m/s"],
             ["Time standard", result.meta.timeStandard || "UTC"],
             ["Diunduh pada", new Date().toISOString()],
         ];
@@ -882,7 +847,8 @@ function buildMetaRows(result) {
             ["Zona waktu (stasiun)", s.timezone || ""],
             ["Tanggal mulai", result.meta.startDate],
             ["Tanggal akhir", result.meta.endDate],
-            ["Granularitas", "hourly"],
+            ["Granularitas", "daily"],
+            ["Satuan kecepatan angin", "m/s"],
             ["Diunduh pada", new Date().toISOString()],
         ];
     }
@@ -901,6 +867,7 @@ function buildMetaRows(result) {
         ["Tanggal mulai", result.meta.startDate],
         ["Tanggal akhir", result.meta.endDate],
         ["Granularitas", result.meta.granularity],
+        ["Satuan kecepatan angin", "m/s"],
         ["Sumber data", result.meta.sources.join(" + ")],
         ["Diunduh pada", new Date().toISOString()],
     ];
@@ -917,7 +884,7 @@ function buildFilename(result) {
     if (result.source === "power") {
         return `weather_power_${safe(result.meta.city.name)}_${start}_to_${end}.xlsx`;
     }
-    return `weather_${safe(result.meta.city.name)}_${start}_to_${end}_${result.meta.granularity}.xlsx`;
+    return `weather_${safe(result.meta.city.name)}_${start}_to_${end}_daily.xlsx`;
 }
 
 // ----- Windrose -----
@@ -958,25 +925,26 @@ function showWindrose() {
     }
     if (!result.windRows || result.windRows.length === 0) {
         showStatus(
-            "Data tidak punya kolom arah/kecepatan angin yang lengkap. " +
-            "Pastikan variabel angin dicentang (untuk Open-Meteo).",
+            "Data tidak punya kolom arah/kecepatan angin yang lengkap.",
             "error"
         );
         return;
     }
 
+    const mode = state.windroseMode === "to" ? "to" : "from";
     const counts = WINDROSE_BINS.map(() =>
         WINDROSE_DIRECTIONS.map(() => 0)
     ); // [bin][direction]
     let total = 0;
     let calmCount = 0;
     for (const { dir, spd } of result.windRows) {
+        const adjDir = mode === "to" ? (dir + 180) % 360 : dir;
         if (spd <= 0.5) {
             calmCount++;
             total++;
             continue;
         }
-        const dirIdx = directionIndex(dir);
+        const dirIdx = directionIndex(adjDir);
         const binIdx = binIndexFor(spd);
         counts[binIdx][dirIdx]++;
         total++;
@@ -996,7 +964,7 @@ function showWindrose() {
 
     const layout = {
         title: {
-            text: windroseTitle(result),
+            text: windroseTitle(result, mode),
             font: { size: 14 },
         },
         font: { family: "system-ui, sans-serif" },
@@ -1029,30 +997,34 @@ function showWindrose() {
     });
 
     els.windroseSection.hidden = false;
+    const modeLabel = mode === "to" ? "Blowing TO (arah hembusan)"
+        : "Blowing FROM (asal angin, konvensi meteorologi)";
     els.windroseInfo.textContent =
+        `Mode: ${modeLabel}. ` +
         `Total observasi: ${total} (calm ≤ 0.5 m/s: ${calmCount} = ` +
         `${total > 0 ? ((calmCount / total) * 100).toFixed(1) : "0"}%). ` +
         `Frekuensi tiap sektor 22.5°, dibagi per bin kecepatan.`;
     els.windroseSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function windroseTitle(result) {
+function windroseTitle(result, mode) {
+    const tag = mode === "to" ? "Blowing TO" : "Blowing FROM";
     if (result.source === "meteostat") {
         const s = result.meta.station;
         return (
-            `Windrose · ${s.name} (WMO ${s.wmo || s.id})` +
+            `Windrose (${tag}) · ${s.name} (WMO ${s.wmo || s.id})` +
             ` · ${result.meta.startDate} → ${result.meta.endDate}`
         );
     }
     if (result.source === "power") {
         const c = result.meta.city;
         return (
-            `Windrose · ${c.name} (NASA POWER, 10 m)` +
+            `Windrose (${tag}) · ${c.name} (NASA POWER, 10 m)` +
             ` · ${result.meta.startDate} → ${result.meta.endDate}`
         );
     }
     const c = result.meta.city;
-    return `Windrose · ${c.name} · ${result.meta.startDate} → ${result.meta.endDate}`;
+    return `Windrose (${tag}) · ${c.name} · ${result.meta.startDate} → ${result.meta.endDate}`;
 }
 
 function directionIndex(degrees) {

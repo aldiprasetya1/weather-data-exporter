@@ -4,18 +4,19 @@ Aplikasi web untuk mengambil data cuaca per kota / stasiun dari tiga sumber publ
 
 ## Fitur
 
-- **Tiga sumber data:**
-  - **Open-Meteo (model global)** — kota mana saja di dunia, historis 1940 → sekarang + forecast 16 hari ke depan, granularitas hourly/daily.
-  - **Meteostat (stasiun observasi Indonesia)** — observasi historis hourly dari ~129 stasiun ASOS/SYNOP di Indonesia (BMKG bandara: WIII Soekarno-Hatta, WARR Juanda, WADD Ngurah Rai, dll.).
-  - **NASA POWER (model + radiasi surya)** — MERRA-2 reanalysis + CERES SYN1deg, lengkap dengan variabel radiasi: GHI / DNI / DHI / clearsky GHI / PAR (cocok untuk PV / pertanian). Hourly tersedia 2001-01-01 → ~3 hari yang lalu.
+- **Tiga sumber data (granularitas harian):**
+  - **Open-Meteo (model global)** — kota mana saja di dunia, historis 1940 → sekarang + forecast 16 hari ke depan.
+  - **Meteostat (stasiun observasi Indonesia)** — observasi harian dari ~129 stasiun ASOS/SYNOP di Indonesia (BMKG bandara: WIII Soekarno-Hatta, WARR Juanda, WADD Ngurah Rai, dll.).
+  - **NASA POWER (model + radiasi surya)** — MERRA-2 reanalysis + CERES SYN1deg harian, lengkap dengan variabel radiasi: GHI / DNI / DHI / clearsky GHI / PAR (cocok untuk PV / pertanian).
+- **Satuan kecepatan angin: m/s** di seluruh data (Excel + pratinjau) maupun windrose.
 - Pencarian kota dengan autocomplete (Open-Meteo Geocoding, dipakai untuk Open-Meteo & POWER) atau pencarian stasiun (Meteostat).
 - Pratinjau 50 baris pertama sebelum unduh.
 - Output Excel `.xlsx` berisi 2 sheet: **Data** + **Info** (metadata: kota/stasiun, koordinat, periode, sumber, dll.).
-- **Windrose** — diagram polar frekuensi arah & kecepatan angin (16 sektor × 7 bin kecepatan dalam m/s: 0–1, 1–3, 3–5, 5–7, 7–9, 9–11, 11+), dengan tombol unduh PNG (resolusi 900×800). Open-Meteo & Meteostat dikonversi dari km/jam → m/s; POWER langsung m/s.
-- Variabel cuaca:
-  - Open-Meteo: suhu, kelembaban, presipitasi, tutupan awan total/rendah/menengah/tinggi, kecepatan/arah/hembusan angin 10m, tekanan, kode cuaca WMO
-  - Meteostat: suhu, dew point, kelembaban, presipitasi, salju, arah/kecepatan/hembusan angin, tekanan, sunshine, kode cuaca
-  - NASA POWER: T2M, RH2M, PRECTOTCORR, PS, CLOUD_AMT, WS10M / WD10M, WS50M / WD50M, ALLSKY_SFC_SW_DWN (GHI), ALLSKY_SFC_SW_DNI (DNI), ALLSKY_SFC_SW_DIFF (DHI), CLRSKY_SFC_SW_DWN (clearsky GHI), ALLSKY_SFC_PAR_TOT (PAR)
+- **Windrose** — diagram polar frekuensi arah & kecepatan angin (16 sektor × 7 bin kecepatan dalam m/s: 0–1, 1–3, 3–5, 5–7, 7–9, 9–11, 11+), dengan toggle **Blowing FROM** (asal angin, konvensi meteorologi) / **Blowing TO** (arah hembusan), dan tombol unduh PNG (resolusi 900×800).
+- Variabel cuaca (set tetap, harian):
+  - Open-Meteo: suhu maks/min, presipitasi total, kecepatan angin 10 m maks (m/s), arah angin dominan, hembusan angin maks (m/s), kode cuaca WMO.
+  - Meteostat: suhu rata-rata/min/maks, presipitasi total, salju, arah/kecepatan angin (m/s), hembusan angin peak (m/s), tekanan, sunshine.
+  - NASA POWER: T2M, RH2M, PRECTOTCORR, PS, CLOUD_AMT, WS10M / WD10M (m/s), WS50M / WD50M (m/s), ALLSKY_SFC_SW_DWN (GHI), ALLSKY_SFC_SW_DNI (DNI), ALLSKY_SFC_SW_DIFF (DHI), CLRSKY_SFC_SW_DWN (clearsky GHI), ALLSKY_SFC_PAR_TOT (PAR).
 
 ## Cara pakai (lokal)
 
@@ -63,7 +64,8 @@ weather-data-exporter/
 Bulk endpoint Meteostat (`bulk.meteostat.net`) tidak mengizinkan CORS, jadi browser tidak bisa fetch langsung. Backend FastAPI di `backend/` menyediakan dua endpoint:
 
 - `GET /stations` — daftar 129 stasiun Indonesia (Meteostat) dengan WMO/ICAO ID, lokasi, dan rentang inventory.
-- `GET /hourly/{station_id}?start=YYYY-MM-DD&end=YYYY-MM-DD` — proxy + decompress + filter rentang tanggal (max 366 hari per request).
+- `GET /daily/{station_id}?start=YYYY-MM-DD&end=YYYY-MM-DD` — proxy + decompress + filter rentang tanggal (max 366 hari per request). Wind speeds (`wspd`, `wpgt`) dikonversi dari km/h → m/s.
+- `GET /hourly/{station_id}?start=YYYY-MM-DD&end=YYYY-MM-DD` — endpoint hourly (legacy, tidak dipakai oleh frontend versi harian).
 
 Jalankan lokal:
 ```bash
