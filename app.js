@@ -1,15 +1,22 @@
 // Weather Data Exporter — fetches weather data from Open-Meteo (model),
-// Meteostat (Indonesian observation stations via a backend proxy), or NASA POWER
-// (MERRA-2 reanalysis with solar radiation), renders a windrose, and exports to Excel.
-
-const GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
-const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
-const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
-const POWER_URL = "https://power.larc.nasa.gov/api/temporal/daily/point";
-const POWER_FILL = -999.0;
+// Meteostat (Indonesian observation stations), or NASA POWER (MERRA-2
+// reanalysis with solar radiation), renders a windrose, and exports to
+// Excel. Every upstream call is proxied through the backend so a valid
+// Bearer token is required — see the login screen.
 
 const BACKEND_URL =
     (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "http://localhost:8001";
+
+// All three upstream sources go through the backend now; the token gate
+// is enforced server-side.
+const GEOCODE_URL = `${BACKEND_URL}/api/openmeteo/geocoding`;
+const FORECAST_URL = `${BACKEND_URL}/api/openmeteo/forecast`;
+const ARCHIVE_URL = `${BACKEND_URL}/api/openmeteo/archive`;
+const POWER_URL = `${BACKEND_URL}/api/power/daily/point`;
+const POWER_FILL = -999.0;
+
+const TOKEN_STORAGE_KEY = "wde.auth.token";
+const PROFILE_STORAGE_KEY = "wde.auth.profile";
 
 // Open-Meteo hourly variables fetched on every request. Wind speeds come back
 // in m/s thanks to the `wind_speed_unit=ms` query parameter. The hourly values
@@ -69,11 +76,289 @@ const state = {
     stations: [],
     lastResult: null, // {headers, rows, meta, windRows: [{dir, spd}]}
     windroseMode: "from", // "from" (asal angin) | "to" (arah hembusan)
+    auth: { token: null, profile: null },
 };
 
 const els = {};
 
+// ===== Authentication =====
+
+class AuthError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "AuthError";
+    }
+}
+
+function loadAuth() {
+    try {
+        const token = localStorage.getItem(TOKEN_STORAGE_KEY) || null;
+        const profileRaw = localStorage.getItem(PROFILE_STORAGE_KEY);
+        const profile = profileRaw ? JSON.parse(profileRaw) : null;
+        state.auth = { token, profile };
+        return state.auth;
+    } catch (_) {
+        state.auth = { token: null, profile: null };
+        return state.auth;
+    }
+}
+
+function saveAuth(token, profile) {
+    state.auth = { token, profile };
+    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(TOKEN_STORAGE_KEY);
+    if (profile) localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    else localStorage.removeItem(PROFILE_STORAGE_KEY);
+}
+
+function clearAuth() {
+    saveAuth(null, null);
+}
+
+function isAuthExpired(profile) {
+    if (!profile || !profile.expires_at) return true;
+    const exp = Date.parse(profile.expires_at);
+    if (!Number.isFinite(exp)) return true;
+    return Date.now() >= exp;
+}
+
+async function apiFetch(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    if (state.auth.token) {
+        headers.set("Authorization", `Bearer ${state.auth.token}`);
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+        clearAuth();
+        showLoginView("Sesi Anda berakhir. Silakan login kembali.");
+        throw new AuthError("Token tidak valid atau sudah berakhir.");
+    }
+    return res;
+}
+
+// ===== Login / view switching =====
+
+function showLoginView(message) {
+    document.getElementById("login-view").hidden = false;
+    document.getElementById("admin-view").hidden = true;
+    document.getElementById("app-view").hidden = true;
+    document.getElementById("auth-bar").hidden = true;
+    if (message) showLoginStatus(message, "info");
+}
+
+function showAppView() {
+    document.getElementById("login-view").hidden = true;
+    document.getElementById("admin-view").hidden = true;
+    document.getElementById("app-view").hidden = false;
+    document.getElementById("auth-bar").hidden = false;
+    refreshAuthBar();
+}
+
+function showAdminView() {
+    document.getElementById("login-view").hidden = true;
+    document.getElementById("app-view").hidden = true;
+    document.getElementById("admin-view").hidden = false;
+    document.getElementById("auth-bar").hidden = false;
+    refreshAuthBar();
+}
+
+function refreshAuthBar() {
+    const p = state.auth.profile;
+    const lab = document.getElementById("auth-label");
+    if (!p || !lab) return;
+    const exp = p.expires_at ? new Date(p.expires_at) : null;
+    const expStr = exp
+        ? exp.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
+        : "?";
+    lab.textContent = `Login: ${p.label} · berakhir ${expStr}`;
+}
+
+function showLoginStatus(msg, type = "info") {
+    const el = document.getElementById("login-status");
+    el.hidden = false;
+    el.textContent = msg;
+    el.className = `status ${type}`;
+}
+
+async function handleLoginSubmit() {
+    const input = document.getElementById("login-token");
+    const token = (input.value || "").trim();
+    if (!token) {
+        showLoginStatus("Masukkan token akses Anda.", "error");
+        return;
+    }
+    showLoginStatus("Memverifikasi token...", "loading");
+    try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+        });
+        const text = await res.text();
+        if (!res.ok) {
+            let detail = text;
+            try {
+                detail = JSON.parse(text).detail || text;
+            } catch (_) {}
+            throw new Error(`HTTP ${res.status}: ${detail}`);
+        }
+        const profile = JSON.parse(text);
+        if (profile.revoked || profile.expired) {
+            throw new Error("Token sudah dicabut atau kadaluarsa.");
+        }
+        saveAuth(token, profile);
+        input.value = "";
+        showAppView();
+    } catch (err) {
+        showLoginStatus(`Gagal login: ${err.message}`, "error");
+    }
+}
+
+function handleLogout() {
+    clearAuth();
+    showLoginView("Anda telah logout.");
+}
+
+// ===== Admin panel =====
+
+function showAdminStatus(msg, type = "info") {
+    const el = document.getElementById("admin-status");
+    el.hidden = false;
+    el.textContent = msg;
+    el.className = `status ${type}`;
+}
+
+function adminSecret() {
+    return (document.getElementById("admin-secret").value || "").trim();
+}
+
+async function adminFetch(path, opts = {}) {
+    const sec = adminSecret();
+    if (!sec) throw new Error("Masukkan X-Admin-Secret terlebih dahulu.");
+    const headers = new Headers(opts.headers || {});
+    headers.set("X-Admin-Secret", sec);
+    if (opts.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+    }
+    const res = await fetch(`${BACKEND_URL}${path}`, { ...opts, headers });
+    const text = await res.text();
+    if (!res.ok) {
+        let detail = text;
+        try { detail = JSON.parse(text).detail || text; } catch (_) {}
+        throw new Error(`HTTP ${res.status}: ${detail}`);
+    }
+    return text ? JSON.parse(text) : null;
+}
+
+async function handleAdminCreate() {
+    const label = (document.getElementById("admin-new-label").value || "").trim();
+    const days = parseInt(document.getElementById("admin-new-days").value, 10);
+    if (!label) {
+        showAdminStatus("Label tidak boleh kosong.", "error");
+        return;
+    }
+    showAdminStatus("Membuat token...", "loading");
+    try {
+        const t = await adminFetch("/api/admin/tokens", {
+            method: "POST",
+            body: JSON.stringify({ label, days }),
+        });
+        const box = document.getElementById("admin-new-token-box");
+        box.hidden = false;
+        box.innerHTML =
+            `<strong>Token baru untuk ${escapeHtml(t.label)} (${days} hari):</strong><br>` +
+            `<code class="token-display">${escapeHtml(t.token)}</code><br>` +
+            `<small>Berlaku sampai ${escapeHtml(t.expires_at)}. Salin token ini sekarang \u2014 ` +
+            `tidak akan ditampilkan ulang.</small>`;
+        showAdminStatus(`Token untuk "${t.label}" berhasil dibuat.`, "success");
+        document.getElementById("admin-new-label").value = "";
+        await handleAdminRefresh();
+    } catch (err) {
+        showAdminStatus(`Gagal: ${err.message}`, "error");
+    }
+}
+
+async function handleAdminRefresh() {
+    showAdminStatus("Memuat daftar token...", "loading");
+    try {
+        const data = await adminFetch("/api/admin/tokens");
+        renderAdminTokens(data.tokens || []);
+        showAdminStatus(`${data.count} token.`, "info");
+    } catch (err) {
+        showAdminStatus(`Gagal: ${err.message}`, "error");
+    }
+}
+
+async function handleAdminRevoke(token) {
+    if (!confirm(`Cabut token ${token}?`)) return;
+    try {
+        await adminFetch(`/api/admin/tokens/${encodeURIComponent(token)}`, {
+            method: "DELETE",
+        });
+        showAdminStatus("Token dicabut.", "success");
+        await handleAdminRefresh();
+    } catch (err) {
+        showAdminStatus(`Gagal: ${err.message}`, "error");
+    }
+}
+
+function renderAdminTokens(tokens) {
+    const t = document.getElementById("admin-tokens-table");
+    t.innerHTML = "";
+    if (!tokens.length) {
+        t.innerHTML = "<tbody><tr><td>(belum ada token)</td></tr></tbody>";
+        return;
+    }
+    const thead = document.createElement("thead");
+    thead.innerHTML = `<tr>
+        <th>Label</th><th>Status</th><th>Berakhir</th><th>Token</th><th></th>
+    </tr>`;
+    t.appendChild(thead);
+    const tbody = document.createElement("tbody");
+    tokens.forEach((tok) => {
+        const status = tok.revoked
+            ? `<span class="badge bad">revoked</span>`
+            : tok.expired
+                ? `<span class="badge muted">expired</span>`
+                : `<span class="badge good">active</span>`;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${escapeHtml(tok.label)}</td>
+            <td>${status}</td>
+            <td>${escapeHtml(tok.expires_at)}</td>
+            <td><code class="token-display">${escapeHtml(tok.token)}</code></td>
+            <td><button class="link-button revoke-btn" data-token="${escapeHtml(tok.token)}">Revoke</button></td>`;
+        tbody.appendChild(tr);
+    });
+    t.appendChild(tbody);
+    t.querySelectorAll(".revoke-btn").forEach((b) =>
+        b.addEventListener("click", (e) => handleAdminRevoke(e.target.dataset.token))
+    );
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+    // Login form bindings.
+    document.getElementById("login-btn").addEventListener("click", handleLoginSubmit);
+    document.getElementById("login-token").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleLoginSubmit();
+        }
+    });
+    document.getElementById("logout-btn").addEventListener("click", handleLogout);
+    document.getElementById("open-admin-btn").addEventListener("click", showAdminView);
+    document.getElementById("back-from-admin-btn").addEventListener("click", showAppView);
+    document.getElementById("admin-create-btn").addEventListener("click", handleAdminCreate);
+    document.getElementById("admin-refresh-btn").addEventListener("click", handleAdminRefresh);
+
+    // Decide initial view based on stored token.
+    loadAuth();
+    if (state.auth.token && state.auth.profile && !isAuthExpired(state.auth.profile)) {
+        showAppView();
+    } else {
+        if (state.auth.token) clearAuth();
+        showLoginView();
+    }
+
     els.cityInput = document.getElementById("city-input");
     els.suggestions = document.getElementById("city-suggestions");
     els.selectedCity = document.getElementById("selected-city");
@@ -244,7 +529,7 @@ function setupCityAutocomplete() {
             const url = `${GEOCODE_URL}?name=${encodeURIComponent(
                 q
             )}&count=8&language=id&format=json`;
-            const res = await fetch(url);
+            const res = await apiFetch(url);
             if (!res.ok) throw new Error(`Geocoding error ${res.status}`);
             const data = await res.json();
             renderSuggestions(data.results || []);
@@ -293,7 +578,7 @@ function setupCityAutocomplete() {
 async function loadStations() {
     try {
         showStatus("Memuat daftar stasiun Indonesia...", "loading");
-        const res = await fetch(`${BACKEND_URL}/stations`);
+        const res = await apiFetch(`${BACKEND_URL}/stations`);
         if (!res.ok) throw new Error(`Backend ${res.status}`);
         const data = await res.json();
         state.stations = data.stations || [];
@@ -417,8 +702,12 @@ async function handleSubmit({ download }) {
             );
         }
     } catch (err) {
-        console.error(err);
-        showStatus(`Gagal: ${err.message}`, "error");
+        if (err && err.name === "AuthError") {
+            // showLoginView already invoked by apiFetch.
+        } else {
+            console.error(err);
+            showStatus(`Gagal: ${err.message}`, "error");
+        }
     } finally {
         setLoading(false);
     }
@@ -594,7 +883,7 @@ async function callOpenMeteo({
     });
     params.set("hourly", OPENMETEO_HOURLY_VARS.join(","));
     const url = `${base}?${params.toString()}`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     if (!res.ok) {
         const text = await res.text();
         let detail = text;
@@ -624,7 +913,7 @@ async function fetchPower({ city, startDate, endDate }) {
         format: "JSON",
     });
     const url = `${POWER_URL}?${params.toString()}`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     if (!res.ok) {
         const text = await res.text();
         let detail = text;
@@ -704,7 +993,7 @@ function powerDailyKeyToIso(t) {
 async function fetchMeteostat({ station, startDate, endDate }) {
     const url = `${BACKEND_URL}/daily/${encodeURIComponent(station.id)}` +
         `?start=${startDate}&end=${endDate}`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     if (!res.ok) {
         const text = await res.text();
         let detail = text;

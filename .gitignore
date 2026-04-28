@@ -15,3 +15,9 @@ __pycache__/
 backend/Dockerfile
 backend/fly.toml
 backend/.dockerignore
+
+# Auth: never commit generated tokens database or admin secret.
+backend/data/
+backend/tokens.sqlite
+backend/app/admin_secret.txt
+backend/app/admin_secret.txt.local

@@ -25,25 +25,41 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from . import auth
+from .admin import router as admin_router
+from .proxies import router as proxies_router
+
 app = FastAPI(
-    title="Weather Data Exporter — Meteostat proxy",
+    title="Weather Data Exporter — authenticated proxy",
     description=(
-        "Read-only proxy for Meteostat bulk hourly data, scoped to "
-        "Indonesian weather stations."
+        "Authenticated proxy for Meteostat / Open-Meteo / NASA POWER. "
+        "All data endpoints require a Bearer token issued by the admin."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
-# Permissive CORS: this is a public read-only proxy so the frontend can be
-# hosted on any origin (devinapps.com, github.io, localhost, etc.).
+# Permissive CORS so the frontend (devinapps.com, github.io, localhost,
+# ...) can authenticate via the Authorization header. Credentials are
+# not used; auth is sent explicitly.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     max_age=86400,
 )
+
+
+@app.on_event("startup")
+def _on_startup() -> None:
+    auth.init_db()
+    # Ensure an admin secret exists on first boot so `fly logs` can show it.
+    auth._read_admin_secret()
+
+
+app.include_router(admin_router)
+app.include_router(proxies_router)
 
 STATIONS_FILE = Path(__file__).parent / "stations_id.json"
 with STATIONS_FILE.open(encoding="utf-8") as fh:
@@ -105,13 +121,30 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/stations")
+@app.post("/api/auth/login")
+def login(payload: dict) -> dict:
+    """Verify a Bearer token and return its public profile.
+
+    Body: ``{"token": "wde_..."}``
+    """
+    token = (payload.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="`token` is required")
+    rec = auth.get_token(token)
+    if rec is None or rec.revoked or rec.is_expired():
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired token"
+        )
+    return rec.to_public()
+
+
+@app.get("/stations", dependencies=[auth.RequireToken])
 def list_stations() -> JSONResponse:
     """Return all Indonesian Meteostat stations with hourly data."""
     return JSONResponse({"count": len(STATIONS), "stations": STATIONS})
 
 
-@app.get("/hourly/{station_id}")
+@app.get("/hourly/{station_id}", dependencies=[auth.RequireToken])
 async def hourly(
     station_id: str,
     start: str = Query(..., description="ISO date YYYY-MM-DD (UTC)"),
@@ -174,7 +207,7 @@ async def hourly(
     }
 
 
-@app.get("/daily/{station_id}")
+@app.get("/daily/{station_id}", dependencies=[auth.RequireToken])
 async def daily(
     station_id: str,
     start: str = Query(..., description="ISO date YYYY-MM-DD (UTC)"),

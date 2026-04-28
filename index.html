@@ -14,12 +14,88 @@
             Ambil data cuaca historis dan ekspor ke Excel. Tiga sumber:
             <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>,
             <a href="https://meteostat.net/" target="_blank" rel="noopener">Meteostat</a>, dan
-            <a href="https://power.larc.nasa.gov/" target="_blank" rel="noopener">NASA POWER</a>
-            (semua gratis, tanpa API key).
+            <a href="https://power.larc.nasa.gov/" target="_blank" rel="noopener">NASA POWER</a>.
         </p>
+        <div id="auth-bar" class="auth-bar" hidden>
+            <span id="auth-label" class="muted"></span>
+            <button id="logout-btn" type="button" class="link-button">Logout</button>
+            <button id="open-admin-btn" type="button" class="link-button">Admin</button>
+        </div>
     </header>
 
-    <main>
+    <main id="login-view">
+        <section class="card login-card">
+            <h2>Masuk dengan Token</h2>
+            <p class="muted">
+                Aplikasi ini memerlukan token akses untuk dapat digunakan.
+                Hubungi admin Anda untuk mendapatkan token (durasi 1 hari /
+                7 hari / 30 hari).
+            </p>
+            <div class="field">
+                <label for="login-token">Token akses</label>
+                <input
+                    id="login-token"
+                    type="text"
+                    placeholder="wde_..."
+                    autocomplete="off"
+                    spellcheck="false"
+                />
+            </div>
+            <div id="login-status" class="status" hidden></div>
+            <div class="actions">
+                <button id="login-btn" type="button" class="primary">Masuk</button>
+            </div>
+        </section>
+    </main>
+
+    <main id="admin-view" hidden>
+        <section class="card">
+            <div class="card-header-row">
+                <h2>Admin — Kelola Token</h2>
+                <button id="back-from-admin-btn" type="button" class="link-button">← Kembali ke aplikasi</button>
+            </div>
+            <p class="muted">
+                Halaman admin untuk membuat / mencabut token. Memerlukan
+                <code>X-Admin-Secret</code> yang hanya Anda yang tahu.
+            </p>
+            <div class="field">
+                <label for="admin-secret">X-Admin-Secret</label>
+                <input
+                    id="admin-secret"
+                    type="password"
+                    placeholder="Masukkan ADMIN_SECRET"
+                    autocomplete="current-password"
+                />
+            </div>
+            <h3>Buat Token Baru</h3>
+            <div class="row">
+                <div class="field">
+                    <label for="admin-new-label">Label (nama pengguna)</label>
+                    <input id="admin-new-label" type="text" placeholder="Contoh: Andi" />
+                </div>
+                <div class="field">
+                    <label for="admin-new-days">Durasi</label>
+                    <select id="admin-new-days">
+                        <option value="1">1 hari</option>
+                        <option value="7" selected>7 hari</option>
+                        <option value="30">30 hari (1 bulan)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="actions">
+                <button id="admin-create-btn" type="button" class="primary">Buat Token</button>
+                <button id="admin-refresh-btn" type="button">Muat Daftar Token</button>
+            </div>
+            <div id="admin-status" class="status" hidden></div>
+            <div id="admin-new-token-box" class="status info" hidden></div>
+            <h3>Daftar Token</h3>
+            <div class="table-wrap">
+                <table id="admin-tokens-table"></table>
+            </div>
+        </section>
+    </main>
+
+    <main id="app-view" hidden>
         <form id="weather-form">
             <section class="card">
                 <h2>1. Sumber Data</h2>
