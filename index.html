@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather Data Exporter</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌦️</text></svg>" />
+</head>
+<body>
+    <header>
+        <h1>🌦️ Weather Data Exporter</h1>
+        <p class="subtitle">
+            Ambil data cuaca historis dan ekspor ke Excel.
+            Sumber data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
+            (gratis, tanpa API key).
+        </p>
+    </header>
+
+    <main>
+        <form id="weather-form">
+            <section class="card">
+                <h2>1. Pilih Kota</h2>
+                <div class="field">
+                    <label for="city-input">Nama kota</label>
+                    <div class="autocomplete">
+                        <input
+                            id="city-input"
+                            type="text"
+                            placeholder="Contoh: Jakarta, Surabaya, Bandung..."
+                            autocomplete="off"
+                            required
+                        />
+                        <ul id="city-suggestions" class="suggestions" hidden></ul>
+                    </div>
+                    <p id="selected-city" class="muted">Belum ada kota yang dipilih.</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>2. Periode Waktu</h2>
+                <div class="row">
+                    <div class="field">
+                        <label for="start-date">Tanggal mulai</label>
+                        <input id="start-date" type="date" required />
+                    </div>
+                    <div class="field">
+                        <label for="end-date">Tanggal akhir</label>
+                        <input id="end-date" type="date" required />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="field">
+                        <label for="granularity">Granularitas</label>
+                        <select id="granularity">
+                            <option value="hourly" selected>Per jam (hourly)</option>
+                            <option value="daily">Per hari (daily)</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="timezone">Zona waktu</label>
+                        <select id="timezone">
+                            <option value="auto" selected>Auto (sesuai lokasi kota)</option>
+                            <option value="Asia/Jakarta">Asia/Jakarta (WIB)</option>
+                            <option value="Asia/Makassar">Asia/Makassar (WITA)</option>
+                            <option value="Asia/Jayapura">Asia/Jayapura (WIT)</option>
+                            <option value="UTC">UTC</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="muted">
+                    Sumber: ERA5 reanalysis (1940 – ~5 hari yang lalu) untuk historis,
+                    dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.
+                </p>
+            </section>
+
+            <section class="card">
+                <h2>3. Variabel Cuaca</h2>
+                <div class="checkbox-grid">
+                    <label class="check"><input type="checkbox" name="var" value="temperature_2m" checked> Suhu (°C)</label>
+                    <label class="check"><input type="checkbox" name="var" value="relative_humidity_2m" checked> Kelembaban (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="precipitation" checked> Presipitasi (mm)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover" checked> Tutupan awan total (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_low"> Awan rendah (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_mid"> Awan menengah (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_high"> Awan tinggi (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="wind_speed_10m" checked> Kecepatan angin 10m (km/jam)</label>
+                    <label class="check"><input type="checkbox" name="var" value="wind_direction_10m" checked> Arah angin 10m (°)</label>
+                    <label class="check"><input type="checkbox" name="var" value="wind_gusts_10m" checked> Hembusan angin 10m (km/jam)</label>
+                    <label class="check"><input type="checkbox" name="var" value="surface_pressure"> Tekanan permukaan (hPa)</label>
+                    <label class="check"><input type="checkbox" name="var" value="weather_code"> Kode cuaca (WMO)</label>
+                </div>
+            </section>
+
+            <div class="actions">
+                <button id="preview-btn" type="button">Pratinjau Data</button>
+                <button id="download-btn" type="submit" class="primary">⬇ Unduh Excel (.xlsx)</button>
+            </div>
+
+            <div id="status" class="status" hidden></div>
+        </form>
+
+        <section id="preview-section" class="card" hidden>
+            <h2>Pratinjau (50 baris pertama)</h2>
+            <div id="preview-info" class="muted"></div>
+            <div class="table-wrap">
+                <table id="preview-table"></table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>
+            Dibuat dengan
+            <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo API</a>
+            &amp;
+            <a href="https://sheetjs.com/" target="_blank" rel="noopener">SheetJS</a>.
+        </p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
