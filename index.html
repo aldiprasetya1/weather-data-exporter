@@ -20,7 +20,27 @@
     <main>
         <form id="weather-form">
             <section class="card">
-                <h2>1. Pilih Kota</h2>
+                <h2>1. Sumber Data</h2>
+                <div class="radio-row">
+                    <label class="radio">
+                        <input type="radio" name="source" value="openmeteo" checked />
+                        <span>
+                            <strong>Open-Meteo (model global)</strong>
+                            <em class="muted">— grid reanalysis/forecast, kota mana saja di dunia</em>
+                        </span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="source" value="meteostat" />
+                        <span>
+                            <strong>Meteostat (stasiun observasi Indonesia)</strong>
+                            <em class="muted">— observasi historis dari stasiun ASOS/SYNOP BMKG (~129 stasiun)</em>
+                        </span>
+                    </label>
+                </div>
+            </section>
+
+            <section id="city-section" class="card">
+                <h2>2. Pilih Kota</h2>
                 <div class="field">
                     <label for="city-input">Nama kota</label>
                     <div class="autocomplete">
@@ -29,7 +49,6 @@
                             type="text"
                             placeholder="Contoh: Jakarta, Surabaya, Bandung..."
                             autocomplete="off"
-                            required
                         />
                         <ul id="city-suggestions" class="suggestions" hidden></ul>
                     </div>
@@ -37,8 +56,26 @@
                 </div>
             </section>
 
+            <section id="station-section" class="card" hidden>
+                <h2>2. Pilih Stasiun</h2>
+                <div class="field">
+                    <label for="station-search">Cari stasiun (nama / kota / kode WMO / ICAO)</label>
+                    <input
+                        id="station-search"
+                        type="text"
+                        placeholder="Contoh: Soekarno, Juanda, WIII, 96749..."
+                        autocomplete="off"
+                    />
+                </div>
+                <div class="field">
+                    <label for="station-select">Stasiun</label>
+                    <select id="station-select" size="8"></select>
+                    <p id="selected-station" class="muted">Belum ada stasiun yang dipilih.</p>
+                </div>
+            </section>
+
             <section class="card">
-                <h2>2. Periode Waktu</h2>
+                <h2>3. Periode Waktu</h2>
                 <div class="row">
                     <div class="field">
                         <label for="start-date">Tanggal mulai</label>
@@ -68,14 +105,19 @@
                         </select>
                     </div>
                 </div>
-                <p class="muted">
+                <p class="muted" id="period-help-openmeteo">
                     Sumber: ERA5 reanalysis (1940 – ~5 hari yang lalu) untuk historis,
                     dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.
                 </p>
+                <p class="muted" id="period-help-meteostat" hidden>
+                    Sumber: observasi stasiun Meteostat (NOAA ISD/SYNOP). Hanya data historis
+                    (sampai ~beberapa minggu yang lalu, tergantung stasiun).
+                    Maks 366 hari per request.
+                </p>
             </section>
 
-            <section class="card">
-                <h2>3. Variabel Cuaca</h2>
+            <section id="vars-section" class="card">
+                <h2>4. Variabel Cuaca</h2>
                 <div class="checkbox-grid">
                     <label class="check"><input type="checkbox" name="var" value="temperature_2m" checked> Suhu (°C)</label>
                     <label class="check"><input type="checkbox" name="var" value="relative_humidity_2m" checked> Kelembaban (%)</label>
@@ -90,15 +132,29 @@
                     <label class="check"><input type="checkbox" name="var" value="surface_pressure"> Tekanan permukaan (hPa)</label>
                     <label class="check"><input type="checkbox" name="var" value="weather_code"> Kode cuaca (WMO)</label>
                 </div>
+                <p class="muted" id="vars-help-meteostat" hidden>
+                    Untuk Meteostat semua variabel hourly stasiun ikut diunduh otomatis: suhu, dew point,
+                    kelembaban, presipitasi, salju, arah/kecepatan/hembusan angin, tekanan, sunshine, kode cuaca.
+                </p>
             </section>
 
             <div class="actions">
                 <button id="preview-btn" type="button">Pratinjau Data</button>
                 <button id="download-btn" type="submit" class="primary">⬇ Unduh Excel (.xlsx)</button>
+                <button id="windrose-btn" type="button">🌬️ Tampilkan Windrose</button>
             </div>
 
             <div id="status" class="status" hidden></div>
         </form>
+
+        <section id="windrose-section" class="card" hidden>
+            <div class="windrose-header">
+                <h2>Windrose</h2>
+                <button id="windrose-download" type="button">⬇ Unduh PNG</button>
+            </div>
+            <div id="windrose-info" class="muted"></div>
+            <div id="windrose-chart" class="windrose-chart"></div>
+        </section>
 
         <section id="preview-section" class="card" hidden>
             <h2>Pratinjau (50 baris pertama)</h2>
@@ -119,6 +175,8 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

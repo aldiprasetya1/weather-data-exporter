@@ -167,6 +167,59 @@ main {
 
 .check input { margin: 0; }
 
+.radio-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.radio {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.radio:has(input:checked) {
+    border-color: var(--primary);
+    background: #eff6ff;
+}
+
+.radio input { margin-top: 3px; }
+.radio span { display: flex; flex-direction: column; gap: 2px; }
+.radio em { font-style: normal; font-size: 13px; }
+
+select#station-select {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    padding: 6px;
+}
+
+select#station-select option {
+    padding: 4px 6px;
+}
+
+.windrose-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 12px;
+}
+
+.windrose-header h2 { margin: 0; }
+
+.windrose-chart {
+    width: 100%;
+    height: 520px;
+    min-height: 480px;
+}
+
 .actions {
     display: flex;
     gap: 12px;

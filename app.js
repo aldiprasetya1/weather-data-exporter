@@ -1,11 +1,15 @@
-// Weather Data Exporter — fetches weather data from Open-Meteo and exports to Excel.
-// No API key required.
+// Weather Data Exporter — fetches weather data from Open-Meteo (model)
+// or Meteostat (Indonesian observation stations) via a backend proxy,
+// renders a windrose, and exports to Excel.
 
 const GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 
-// Variable metadata: id -> { label, unit, daily (optional daily aggregation override) }
+const BACKEND_URL =
+    (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "http://localhost:8001";
+
+// Open-Meteo variable metadata.
 const VARIABLE_META = {
     temperature_2m: { label: "Suhu", unit: "°C", daily: "temperature_2m_mean" },
     relative_humidity_2m: { label: "Kelembaban", unit: "%", daily: null },
@@ -25,7 +29,6 @@ const VARIABLE_META = {
     weather_code: { label: "Kode cuaca (WMO)", unit: "", daily: "weather_code" },
 };
 
-// Daily-only labels for daily-aggregated variables (used when granularity = daily).
 const DAILY_LABEL = {
     temperature_2m_mean: { label: "Suhu rata-rata", unit: "°C" },
     temperature_2m_max: { label: "Suhu maks", unit: "°C" },
@@ -37,9 +40,27 @@ const DAILY_LABEL = {
     weather_code: { label: "Kode cuaca (WMO)", unit: "" },
 };
 
+// Meteostat hourly column metadata. Keys must match the backend response.
+const METEOSTAT_META = {
+    temp: { label: "Suhu", unit: "°C" },
+    dwpt: { label: "Dew point", unit: "°C" },
+    rhum: { label: "Kelembaban", unit: "%" },
+    prcp: { label: "Presipitasi", unit: "mm" },
+    snow: { label: "Salju", unit: "mm" },
+    wdir: { label: "Arah angin", unit: "°" },
+    wspd: { label: "Kecepatan angin", unit: "km/jam" },
+    wpgt: { label: "Hembusan angin (peak)", unit: "km/jam" },
+    pres: { label: "Tekanan", unit: "hPa" },
+    tsun: { label: "Sunshine", unit: "menit" },
+    coco: { label: "Kode cuaca", unit: "" },
+};
+
 const state = {
-    selectedCity: null, // { name, country, admin1, latitude, longitude, timezone }
-    lastResult: null, // { headers, rows, meta }
+    source: "openmeteo", // "openmeteo" | "meteostat"
+    selectedCity: null,
+    selectedStation: null,
+    stations: [],
+    lastResult: null, // {headers, rows, meta, windRows: [{dir, spd}]}
 };
 
 const els = {};
@@ -48,32 +69,49 @@ document.addEventListener("DOMContentLoaded", () => {
     els.cityInput = document.getElementById("city-input");
     els.suggestions = document.getElementById("city-suggestions");
     els.selectedCity = document.getElementById("selected-city");
+    els.citySection = document.getElementById("city-section");
+    els.stationSection = document.getElementById("station-section");
+    els.stationSearch = document.getElementById("station-search");
+    els.stationSelect = document.getElementById("station-select");
+    els.selectedStation = document.getElementById("selected-station");
     els.startDate = document.getElementById("start-date");
     els.endDate = document.getElementById("end-date");
     els.granularity = document.getElementById("granularity");
     els.timezone = document.getElementById("timezone");
+    els.periodHelpOM = document.getElementById("period-help-openmeteo");
+    els.periodHelpMS = document.getElementById("period-help-meteostat");
+    els.varsSection = document.getElementById("vars-section");
+    els.varsHelpMS = document.getElementById("vars-help-meteostat");
     els.previewBtn = document.getElementById("preview-btn");
     els.downloadBtn = document.getElementById("download-btn");
+    els.windroseBtn = document.getElementById("windrose-btn");
     els.form = document.getElementById("weather-form");
     els.status = document.getElementById("status");
     els.previewSection = document.getElementById("preview-section");
     els.previewInfo = document.getElementById("preview-info");
     els.previewTable = document.getElementById("preview-table");
+    els.windroseSection = document.getElementById("windrose-section");
+    els.windroseInfo = document.getElementById("windrose-info");
+    els.windroseChart = document.getElementById("windrose-chart");
+    els.windroseDownload = document.getElementById("windrose-download");
 
-    // Default dates: last 7 days
     const today = new Date();
     const weekAgo = new Date();
     weekAgo.setDate(today.getDate() - 7);
     els.startDate.value = isoDate(weekAgo);
     els.endDate.value = isoDate(today);
 
+    setupSourceToggle();
     setupCityAutocomplete();
+    setupStationPicker();
 
     els.previewBtn.addEventListener("click", () => handleSubmit({ download: false }));
     els.form.addEventListener("submit", (e) => {
         e.preventDefault();
         handleSubmit({ download: true });
     });
+    els.windroseBtn.addEventListener("click", showWindrose);
+    els.windroseDownload.addEventListener("click", downloadWindrosePNG);
 });
 
 function isoDate(d) {
@@ -83,7 +121,49 @@ function isoDate(d) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-// ----- City autocomplete -----
+function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+    }[c]));
+}
+
+// ----- Source toggle -----
+
+function setupSourceToggle() {
+    const radios = document.querySelectorAll('input[name="source"]');
+    radios.forEach((r) =>
+        r.addEventListener("change", () => {
+            state.source = r.value;
+            updateSourceUI();
+        })
+    );
+    updateSourceUI();
+}
+
+function updateSourceUI() {
+    const isMeteostat = state.source === "meteostat";
+    els.citySection.hidden = isMeteostat;
+    els.stationSection.hidden = !isMeteostat;
+    els.periodHelpOM.hidden = isMeteostat;
+    els.periodHelpMS.hidden = !isMeteostat;
+    els.varsSection.hidden = isMeteostat;
+    els.varsHelpMS.hidden = !isMeteostat;
+
+    // Granularity: Meteostat only supports hourly in this build.
+    const dailyOpt = els.granularity.querySelector('option[value="daily"]');
+    if (dailyOpt) dailyOpt.disabled = isMeteostat;
+    if (isMeteostat) els.granularity.value = "hourly";
+
+    if (isMeteostat && !state.stations.length) {
+        loadStations();
+    }
+}
+
+// ----- City autocomplete (Open-Meteo) -----
 
 function setupCityAutocomplete() {
     let debounceTimer = null;
@@ -93,8 +173,6 @@ function setupCityAutocomplete() {
         const q = els.cityInput.value.trim();
         state.selectedCity = null;
         els.selectedCity.textContent = "Belum ada kota yang dipilih.";
-        els.selectedCity.classList.remove("success");
-
         clearTimeout(debounceTimer);
         if (q.length < 2) {
             hideSuggestions();
@@ -185,23 +263,74 @@ function setupCityAutocomplete() {
     }
 }
 
-function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-    }[c]));
+// ----- Station picker (Meteostat) -----
+
+async function loadStations() {
+    try {
+        showStatus("Memuat daftar stasiun Indonesia...", "loading");
+        const res = await fetch(`${BACKEND_URL}/stations`);
+        if (!res.ok) throw new Error(`Backend ${res.status}`);
+        const data = await res.json();
+        state.stations = data.stations || [];
+        renderStationList(state.stations);
+        showStatus(`${state.stations.length} stasiun di Indonesia tersedia.`, "info");
+    } catch (err) {
+        console.error(err);
+        showStatus(`Gagal memuat daftar stasiun: ${err.message}`, "error");
+    }
 }
 
-// ----- Submit / fetch -----
+function setupStationPicker() {
+    els.stationSearch.addEventListener("input", () => {
+        const q = els.stationSearch.value.trim().toLowerCase();
+        if (!q) {
+            renderStationList(state.stations);
+            return;
+        }
+        const filtered = state.stations.filter((s) => {
+            const hay = [s.id, s.name, s.wmo, s.icao, s.region]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+            return hay.includes(q);
+        });
+        renderStationList(filtered);
+    });
+
+    els.stationSelect.addEventListener("change", () => {
+        const id = els.stationSelect.value;
+        const s = state.stations.find((x) => x.id === id);
+        if (s) selectStation(s);
+    });
+}
+
+function renderStationList(list) {
+    els.stationSelect.innerHTML = "";
+    list.forEach((s) => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        const wmo = s.wmo || s.id;
+        const icao = s.icao ? ` (${s.icao})` : "";
+        const inv = s.hourly_end ? ` · hourly ${s.hourly_start} → ${s.hourly_end}` : "";
+        opt.textContent = `${wmo}${icao} — ${s.name}${inv}`;
+        els.stationSelect.appendChild(opt);
+    });
+}
+
+function selectStation(s) {
+    state.selectedStation = s;
+    const wmo = s.wmo || s.id;
+    const icao = s.icao ? ` / ${s.icao}` : "";
+    els.selectedStation.innerHTML =
+        `Terpilih: <strong>${escapeHtml(s.name)}</strong> ` +
+        `(WMO ${escapeHtml(wmo)}${escapeHtml(icao)}, ` +
+        `${s.latitude?.toFixed(4)}, ${s.longitude?.toFixed(4)}, ` +
+        `${escapeHtml(s.timezone || "")})`;
+}
+
+// ----- Submit -----
 
 async function handleSubmit({ download }) {
-    if (!state.selectedCity) {
-        showStatus("Pilih kota dulu dari saran pencarian.", "error");
-        return;
-    }
     const startDate = els.startDate.value;
     const endDate = els.endDate.value;
     if (!startDate || !endDate) {
@@ -213,30 +342,40 @@ async function handleSubmit({ download }) {
         return;
     }
 
-    const selectedVars = Array.from(
-        document.querySelectorAll('input[name="var"]:checked')
-    ).map((i) => i.value);
-
-    if (!selectedVars.length) {
-        showStatus("Pilih minimal satu variabel cuaca.", "error");
-        return;
-    }
-
-    const granularity = els.granularity.value; // hourly | daily
-    const timezone = els.timezone.value;
-
     setLoading(true);
-    showStatus("Mengambil data dari Open-Meteo...", "loading");
+    showStatus("Mengambil data...", "loading");
 
     try {
-        const result = await fetchWeather({
-            city: state.selectedCity,
-            startDate,
-            endDate,
-            variables: selectedVars,
-            granularity,
-            timezone,
-        });
+        let result;
+        if (state.source === "meteostat") {
+            if (!state.selectedStation) {
+                throw new Error("Pilih stasiun dulu dari daftar.");
+            }
+            result = await fetchMeteostat({
+                station: state.selectedStation,
+                startDate,
+                endDate,
+            });
+        } else {
+            if (!state.selectedCity) {
+                throw new Error("Pilih kota dulu dari saran pencarian.");
+            }
+            const selectedVars = Array.from(
+                document.querySelectorAll('input[name="var"]:checked')
+            ).map((i) => i.value);
+            if (!selectedVars.length) {
+                throw new Error("Pilih minimal satu variabel cuaca.");
+            }
+            result = await fetchOpenMeteo({
+                city: state.selectedCity,
+                startDate,
+                endDate,
+                variables: selectedVars,
+                granularity: els.granularity.value,
+                timezone: els.timezone.value,
+            });
+        }
+
         state.lastResult = result;
         renderPreview(result);
         if (download) {
@@ -262,6 +401,7 @@ async function handleSubmit({ download }) {
 function setLoading(loading) {
     els.previewBtn.disabled = loading;
     els.downloadBtn.disabled = loading;
+    els.windroseBtn.disabled = loading;
 }
 
 function showStatus(msg, type = "info") {
@@ -270,20 +410,17 @@ function showStatus(msg, type = "info") {
     els.status.className = `status ${type}`;
 }
 
-// Decide whether the date range is fully historical, fully forecast, or mixed.
-// Open-Meteo archive supports up to ~5 days ago; forecast supports up to 16 days ahead.
-// We use forecast endpoint with past_days/forecast_days when range is recent,
-// and archive endpoint for older ranges. For mixed, we merge the two.
-async function fetchWeather({ city, startDate, endDate, variables, granularity, timezone }) {
+// ----- Open-Meteo fetch -----
+
+async function fetchOpenMeteo({ city, startDate, endDate, variables, granularity, timezone }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const archiveCutoff = new Date(today);
-    archiveCutoff.setDate(today.getDate() - 5); // archive lags ~5 days
+    archiveCutoff.setDate(today.getDate() - 5);
 
     const start = parseLocalDate(startDate);
     const end = parseLocalDate(endDate);
 
-    // Build list of variable names per granularity
     const apiVars = mapVariables(variables, granularity);
 
     const segments = [];
@@ -299,7 +436,7 @@ async function fetchWeather({ city, startDate, endDate, variables, granularity, 
     }
 
     const allTimes = [];
-    const allRows = {}; // time -> { var -> value }
+    const allRows = {};
 
     for (const seg of segments) {
         const data = await callOpenMeteo({
@@ -312,10 +449,8 @@ async function fetchWeather({ city, startDate, endDate, variables, granularity, 
             granularity,
             timezone,
         });
-
         const block = data[granularity];
         if (!block || !block.time) continue;
-
         block.time.forEach((t, i) => {
             if (!(t in allRows)) {
                 allRows[t] = {};
@@ -327,17 +462,31 @@ async function fetchWeather({ city, startDate, endDate, variables, granularity, 
         });
     }
 
-    // Sort by time
     allTimes.sort();
 
-    // Build table
     const headers = ["Waktu", ...apiVars.map(varHeader)];
     const rows = allTimes.map((t) => [t, ...apiVars.map((v) => allRows[t]?.[v] ?? null)]);
 
+    // Wind rows for windrose
+    const dirIdx = apiVars.indexOf("wind_direction_10m");
+    const spdIdx = apiVars.indexOf("wind_speed_10m");
+    const windRows = [];
+    if (dirIdx >= 0 && spdIdx >= 0) {
+        for (const t of allTimes) {
+            const r = allRows[t];
+            const d = r[apiVars[dirIdx]];
+            const s = r[apiVars[spdIdx]];
+            if (d != null && s != null) windRows.push({ dir: d, spd: s });
+        }
+    }
+
     return {
+        source: "openmeteo",
         headers,
         rows,
+        windRows,
         meta: {
+            kind: "openmeteo",
             city,
             startDate,
             endDate,
@@ -350,14 +499,12 @@ async function fetchWeather({ city, startDate, endDate, variables, granularity, 
 }
 
 function parseLocalDate(s) {
-    // s = "YYYY-MM-DD"
     const [y, m, d] = s.split("-").map(Number);
     return new Date(y, m - 1, d);
 }
 
 function mapVariables(selected, granularity) {
     if (granularity === "hourly") return selected.slice();
-    // daily: map each to its daily aggregation, dedupe & drop those with no daily form.
     const out = [];
     for (const v of selected) {
         const meta = VARIABLE_META[v];
@@ -366,10 +513,7 @@ function mapVariables(selected, granularity) {
             if (!out.includes(meta.daily)) out.push(meta.daily);
         }
     }
-    if (!out.length) {
-        // Fallback so user gets something
-        out.push("temperature_2m_mean", "precipitation_sum");
-    }
+    if (!out.length) out.push("temperature_2m_mean", "precipitation_sum");
     return out;
 }
 
@@ -406,7 +550,6 @@ async function callOpenMeteo({
         timeformat: "iso8601",
     });
     params.set(granularity, apiVars.join(","));
-
     const url = `${base}?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) {
@@ -422,18 +565,62 @@ async function callOpenMeteo({
     return await res.json();
 }
 
-// ----- Preview & export -----
+// ----- Meteostat fetch (via backend) -----
+
+async function fetchMeteostat({ station, startDate, endDate }) {
+    const url = `${BACKEND_URL}/hourly/${encodeURIComponent(station.id)}` +
+        `?start=${startDate}&end=${endDate}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+        let detail = "";
+        try {
+            const j = await res.json();
+            detail = j.detail || JSON.stringify(j);
+        } catch (_) {
+            detail = await res.text();
+        }
+        throw new Error(`Backend HTTP ${res.status}: ${detail}`);
+    }
+    const data = await res.json();
+    // data.columns: ["time", "temp", "dwpt", ...]; data.rows: array of arrays.
+    const headers = data.columns.map((c) => {
+        if (c === "time") return "Waktu";
+        const m = METEOSTAT_META[c];
+        if (!m) return c;
+        return m.unit ? `${m.label} (${m.unit})` : m.label;
+    });
+
+    const dirIdx = data.columns.indexOf("wdir");
+    const spdIdx = data.columns.indexOf("wspd");
+    const windRows = [];
+    if (dirIdx >= 0 && spdIdx >= 0) {
+        for (const r of data.rows) {
+            const d = r[dirIdx];
+            const s = r[spdIdx];
+            if (d != null && s != null) windRows.push({ dir: d, spd: s });
+        }
+    }
+
+    return {
+        source: "meteostat",
+        headers,
+        rows: data.rows,
+        windRows,
+        meta: {
+            kind: "meteostat",
+            station,
+            startDate,
+            endDate,
+            columns: data.columns,
+        },
+    };
+}
+
+// ----- Preview -----
 
 function renderPreview(result) {
     els.previewSection.hidden = false;
-    const { city, startDate, endDate, granularity, sources } = result.meta;
-    const parts = [city.name];
-    if (city.admin1) parts.push(city.admin1);
-    if (city.country) parts.push(city.country);
-    els.previewInfo.textContent =
-        `Kota: ${parts.join(", ")} · Periode: ${startDate} → ${endDate}` +
-        ` · Granularitas: ${granularity} · Sumber: ${sources.join(" + ")}` +
-        ` · Total baris: ${result.rows.length}`;
+    els.previewInfo.textContent = describeResult(result);
 
     const table = els.previewTable;
     table.innerHTML = "";
@@ -452,7 +639,7 @@ function renderPreview(result) {
         const tr = document.createElement("tr");
         r.forEach((cell) => {
             const td = document.createElement("td");
-            td.textContent = cell ?? "";
+            td.textContent = cell == null ? "" : cell;
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -460,14 +647,34 @@ function renderPreview(result) {
     table.appendChild(tbody);
 }
 
-function exportXlsx(result) {
-    const { city, startDate, endDate, granularity, timezone, sources } = result.meta;
-    const wb = XLSX.utils.book_new();
+function describeResult(result) {
+    if (result.source === "meteostat") {
+        const s = result.meta.station;
+        const wmo = s.wmo || s.id;
+        return (
+            `Stasiun: ${s.name} (WMO ${wmo}` +
+            (s.icao ? ` / ${s.icao}` : "") +
+            `) · Periode: ${result.meta.startDate} → ${result.meta.endDate}` +
+            ` · Sumber: Meteostat (NOAA ISD/SYNOP) · Total baris: ${result.rows.length}`
+        );
+    }
+    const c = result.meta.city;
+    const parts = [c.name];
+    if (c.admin1) parts.push(c.admin1);
+    if (c.country) parts.push(c.country);
+    return (
+        `Kota: ${parts.join(", ")} · Periode: ${result.meta.startDate} → ${result.meta.endDate}` +
+        ` · Granularitas: ${result.meta.granularity} · Sumber: ${result.meta.sources.join(" + ")}` +
+        ` · Total baris: ${result.rows.length}`
+    );
+}
 
-    // Sheet 1: data
+// ----- Excel export -----
+
+function exportXlsx(result) {
+    const wb = XLSX.utils.book_new();
     const aoa = [result.headers, ...result.rows];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    // Auto column widths
     ws["!cols"] = result.headers.map((h, idx) => {
         let max = String(h).length;
         for (let i = 0; i < Math.min(result.rows.length, 200); i++) {
@@ -478,29 +685,226 @@ function exportXlsx(result) {
     });
     XLSX.utils.book_append_sheet(wb, ws, "Data");
 
-    // Sheet 2: metadata
-    const cityParts = [city.name];
-    if (city.admin1) cityParts.push(city.admin1);
-    if (city.country) cityParts.push(city.country);
-    const metaRows = [
-        ["Field", "Value"],
-        ["Kota", cityParts.join(", ")],
-        ["Latitude", city.latitude],
-        ["Longitude", city.longitude],
-        ["Zona waktu (kota)", city.timezone || ""],
-        ["Zona waktu (request)", timezone],
-        ["Tanggal mulai", startDate],
-        ["Tanggal akhir", endDate],
-        ["Granularitas", granularity],
-        ["Sumber data", sources.join(" + ")],
-        ["API", "Open-Meteo (open-meteo.com)"],
-        ["Diunduh pada", new Date().toISOString()],
-    ];
+    const metaRows = buildMetaRows(result);
     const metaWs = XLSX.utils.aoa_to_sheet(metaRows);
     metaWs["!cols"] = [{ wch: 22 }, { wch: 50 }];
     XLSX.utils.book_append_sheet(wb, metaWs, "Info");
 
-    const safeCity = (city.name || "city").replace(/[^a-z0-9]+/gi, "_");
-    const filename = `weather_${safeCity}_${startDate}_to_${endDate}_${granularity}.xlsx`;
+    const filename = buildFilename(result);
     XLSX.writeFile(wb, filename);
+}
+
+function buildMetaRows(result) {
+    if (result.source === "meteostat") {
+        const s = result.meta.station;
+        const wmo = s.wmo || s.id;
+        return [
+            ["Field", "Value"],
+            ["Sumber", "Meteostat (NOAA ISD / SYNOP via bulk.meteostat.net)"],
+            ["Stasiun", s.name],
+            ["Kode WMO", wmo],
+            ["Kode ICAO", s.icao || ""],
+            ["Region", s.region || ""],
+            ["Latitude", s.latitude],
+            ["Longitude", s.longitude],
+            ["Elevasi (m)", s.elevation],
+            ["Zona waktu (stasiun)", s.timezone || ""],
+            ["Tanggal mulai", result.meta.startDate],
+            ["Tanggal akhir", result.meta.endDate],
+            ["Granularitas", "hourly"],
+            ["Diunduh pada", new Date().toISOString()],
+        ];
+    }
+    const c = result.meta.city;
+    const cityParts = [c.name];
+    if (c.admin1) cityParts.push(c.admin1);
+    if (c.country) cityParts.push(c.country);
+    return [
+        ["Field", "Value"],
+        ["Sumber", "Open-Meteo (open-meteo.com)"],
+        ["Kota", cityParts.join(", ")],
+        ["Latitude", c.latitude],
+        ["Longitude", c.longitude],
+        ["Zona waktu (kota)", c.timezone || ""],
+        ["Zona waktu (request)", result.meta.timezone],
+        ["Tanggal mulai", result.meta.startDate],
+        ["Tanggal akhir", result.meta.endDate],
+        ["Granularitas", result.meta.granularity],
+        ["Sumber data", result.meta.sources.join(" + ")],
+        ["Diunduh pada", new Date().toISOString()],
+    ];
+}
+
+function buildFilename(result) {
+    const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
+    const start = result.source === "meteostat" ? result.meta.startDate : result.meta.startDate;
+    const end = result.source === "meteostat" ? result.meta.endDate : result.meta.endDate;
+    if (result.source === "meteostat") {
+        const s = result.meta.station;
+        return `weather_meteostat_${safe(s.wmo || s.id)}_${start}_to_${end}.xlsx`;
+    }
+    return `weather_${safe(result.meta.city.name)}_${start}_to_${end}_${result.meta.granularity}.xlsx`;
+}
+
+// ----- Windrose -----
+
+const WINDROSE_DIRECTIONS = [
+    { theta: "N", deg: 0 },
+    { theta: "NNE", deg: 22.5 },
+    { theta: "NE", deg: 45 },
+    { theta: "ENE", deg: 67.5 },
+    { theta: "E", deg: 90 },
+    { theta: "ESE", deg: 112.5 },
+    { theta: "SE", deg: 135 },
+    { theta: "SSE", deg: 157.5 },
+    { theta: "S", deg: 180 },
+    { theta: "SSW", deg: 202.5 },
+    { theta: "SW", deg: 225 },
+    { theta: "WSW", deg: 247.5 },
+    { theta: "W", deg: 270 },
+    { theta: "WNW", deg: 292.5 },
+    { theta: "NW", deg: 315 },
+    { theta: "NNW", deg: 337.5 },
+];
+const WINDROSE_BINS = [
+    { label: "0–5", min: 0, max: 5, color: "#deebf7" },
+    { label: "5–10", min: 5, max: 10, color: "#9ecae1" },
+    { label: "10–15", min: 10, max: 15, color: "#6baed6" },
+    { label: "15–20", min: 15, max: 20, color: "#4292c6" },
+    { label: "20–25", min: 20, max: 25, color: "#2171b5" },
+    { label: "25–30", min: 25, max: 30, color: "#08519c" },
+    { label: "30+", min: 30, max: Infinity, color: "#08306b" },
+];
+
+function showWindrose() {
+    const result = state.lastResult;
+    if (!result) {
+        showStatus("Klik 'Pratinjau Data' dulu untuk memuat data sebelum render windrose.", "error");
+        return;
+    }
+    if (!result.windRows || result.windRows.length === 0) {
+        showStatus(
+            "Data tidak punya kolom arah/kecepatan angin yang lengkap. " +
+            "Pastikan variabel angin dicentang (untuk Open-Meteo).",
+            "error"
+        );
+        return;
+    }
+
+    const counts = WINDROSE_BINS.map(() =>
+        WINDROSE_DIRECTIONS.map(() => 0)
+    ); // [bin][direction]
+    let total = 0;
+    let calmCount = 0;
+    for (const { dir, spd } of result.windRows) {
+        if (spd <= 0.5) {
+            calmCount++;
+            total++;
+            continue;
+        }
+        const dirIdx = directionIndex(dir);
+        const binIdx = binIndexFor(spd);
+        counts[binIdx][dirIdx]++;
+        total++;
+    }
+
+    const traces = WINDROSE_BINS.map((bin, bi) => ({
+        type: "barpolar",
+        name: `${bin.label} km/jam`,
+        r: counts[bi].map((c) => (total > 0 ? (c / total) * 100 : 0)),
+        theta: WINDROSE_DIRECTIONS.map((d) => d.theta),
+        marker: { color: bin.color, line: { color: "white", width: 1 } },
+        hovertemplate:
+            "%{theta}<br>" +
+            `${bin.label} km/jam<br>` +
+            "%{r:.2f}% of obs<extra></extra>",
+    }));
+
+    const layout = {
+        title: {
+            text: windroseTitle(result),
+            font: { size: 14 },
+        },
+        font: { family: "system-ui, sans-serif" },
+        polar: {
+            barmode: "stack",
+            bargap: 0,
+            radialaxis: {
+                ticksuffix: "%",
+                angle: 45,
+                tickfont: { size: 11 },
+            },
+            angularaxis: {
+                direction: "clockwise",
+                rotation: 90, // N at top
+                tickfont: { size: 12 },
+            },
+        },
+        legend: {
+            title: { text: "Kecepatan angin" },
+            orientation: "v",
+        },
+        margin: { t: 60, b: 40, l: 40, r: 120 },
+        showlegend: true,
+    };
+
+    Plotly.newPlot(els.windroseChart, traces, layout, {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d"],
+    });
+
+    els.windroseSection.hidden = false;
+    els.windroseInfo.textContent =
+        `Total observasi: ${total} (calm ≤ 0.5 km/jam: ${calmCount} = ` +
+        `${total > 0 ? ((calmCount / total) * 100).toFixed(1) : "0"}%). ` +
+        `Frekuensi tiap sektor 22.5°, dibagi per bin kecepatan.`;
+    els.windroseSection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function windroseTitle(result) {
+    if (result.source === "meteostat") {
+        const s = result.meta.station;
+        return (
+            `Windrose · ${s.name} (WMO ${s.wmo || s.id})` +
+            ` · ${result.meta.startDate} → ${result.meta.endDate}`
+        );
+    }
+    const c = result.meta.city;
+    return `Windrose · ${c.name} · ${result.meta.startDate} → ${result.meta.endDate}`;
+}
+
+function directionIndex(degrees) {
+    // Map 0..360 to nearest of 16 cardinal sectors (each 22.5° wide).
+    const norm = ((degrees % 360) + 360) % 360;
+    return Math.round(norm / 22.5) % 16;
+}
+
+function binIndexFor(spd) {
+    for (let i = WINDROSE_BINS.length - 1; i >= 0; i--) {
+        if (spd >= WINDROSE_BINS[i].min) return i;
+    }
+    return 0;
+}
+
+function downloadWindrosePNG() {
+    const result = state.lastResult;
+    if (!result || !els.windroseChart || els.windroseSection.hidden) {
+        showStatus("Tampilkan windrose dulu sebelum unduh.", "error");
+        return;
+    }
+    const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
+    let filename;
+    if (result.source === "meteostat") {
+        const s = result.meta.station;
+        filename = `windrose_meteostat_${safe(s.wmo || s.id)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+    } else {
+        filename = `windrose_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+    }
+    Plotly.downloadImage(els.windroseChart, {
+        format: "png",
+        width: 900,
+        height: 800,
+        filename,
+    });
 }

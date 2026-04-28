@@ -4,22 +4,16 @@ Aplikasi web sederhana (static site, no backend) untuk mengambil data cuaca per 
 
 ## Fitur
 
-- Pencarian kota dengan autocomplete (Open-Meteo Geocoding API)
-- Pilih rentang tanggal bebas (historis 1940 – sekarang, atau forecast hingga 16 hari ke depan — sistem otomatis menggabungkan archive + forecast jika rentang melintasi keduanya)
-- Pilih granularitas: **per jam (hourly)** atau **per hari (daily)**
-- Variabel cuaca yang tersedia:
-  - Suhu (°C)
-  - Kelembaban relatif (%)
-  - Presipitasi (mm)
-  - Tutupan awan total / rendah / menengah / tinggi (%)
-  - Kecepatan angin 10m (km/jam)
-  - Arah angin 10m (°)
-  - Hembusan angin 10m (km/jam)
-  - Tekanan permukaan (hPa)
-  - Kode cuaca WMO
-- Pratinjau 50 baris pertama sebelum unduh
-- Output Excel berisi 2 sheet: **Data** + **Info** (metadata: kota, koordinat, periode, sumber, dll.)
-- Tidak butuh API key, tidak butuh backend — bisa dibuka langsung di browser atau di-host sebagai static site (GitHub Pages, Netlify, Vercel, devinapps.com, dll.)
+- **Dua sumber data:**
+  - **Open-Meteo (model global)** — kota mana saja di dunia, historis 1940 → sekarang + forecast 16 hari ke depan, granularitas hourly/daily.
+  - **Meteostat (stasiun observasi Indonesia)** — observasi historis hourly dari ~129 stasiun ASOS/SYNOP di Indonesia (BMKG bandara: WIII Soekarno-Hatta, WARR Juanda, WADD Ngurah Rai, dll.).
+- Pencarian kota dengan autocomplete (Open-Meteo Geocoding) atau pencarian stasiun (Meteostat).
+- Pratinjau 50 baris pertama sebelum unduh.
+- Output Excel `.xlsx` berisi 2 sheet: **Data** + **Info** (metadata: kota/stasiun, koordinat, periode, sumber, dll.).
+- **Windrose** — diagram polar frekuensi arah & kecepatan angin (16 sektor × 7 bin kecepatan), dengan tombol unduh PNG (resolusi 900×800).
+- Variabel cuaca:
+  - Open-Meteo: suhu, kelembaban, presipitasi, tutupan awan total/rendah/menengah/tinggi, kecepatan/arah/hembusan angin 10m, tekanan, kode cuaca WMO
+  - Meteostat: suhu, dew point, kelembaban, presipitasi, salju, arah/kecepatan/hembusan angin, tekanan, sunshine, kode cuaca
 
 ## Cara pakai (lokal)
 
@@ -38,18 +32,42 @@ python3 -m http.server 8000
 
 ## Tech stack
 
-- HTML + CSS + Vanilla JavaScript (tanpa framework)
-- [Open-Meteo API](https://open-meteo.com/) — gratis, tanpa API key
-- [SheetJS (xlsx)](https://sheetjs.com/) via CDN — untuk export Excel
+- HTML + CSS + Vanilla JavaScript (tanpa framework) — frontend
+- [Open-Meteo API](https://open-meteo.com/) — gratis, tanpa API key (model global)
+- [Meteostat](https://meteostat.net/) bulk endpoint — observasi stasiun, gratis, tanpa API key (di-proxy oleh backend karena CORS)
+- [SheetJS (xlsx)](https://sheetjs.com/) — export Excel
+- [Plotly.js](https://plotly.com/javascript/) — windrose chart + PNG download
+- FastAPI (Python) — backend proxy untuk Meteostat, deploy ke Fly.io
 
 ## Struktur
 
 ```
 weather-data-exporter/
-├── index.html      # markup utama
-├── styles.css      # styling
-├── app.js          # logika fetch data + export Excel
+├── index.html       # markup utama
+├── styles.css       # styling
+├── app.js           # logika fetch data + windrose + export Excel
+├── config.js        # runtime config (BACKEND_URL)
+├── backend/         # FastAPI proxy untuk Meteostat
+│   ├── pyproject.toml
+│   └── app/
+│       ├── main.py
+│       └── stations_id.json   # daftar 129 stasiun Indonesia (Meteostat)
 └── README.md
+```
+
+## Backend (Meteostat proxy)
+
+Bulk endpoint Meteostat (`bulk.meteostat.net`) tidak mengizinkan CORS, jadi browser tidak bisa fetch langsung. Backend FastAPI di `backend/` menyediakan dua endpoint:
+
+- `GET /stations` — daftar 129 stasiun Indonesia (Meteostat) dengan WMO/ICAO ID, lokasi, dan rentang inventory.
+- `GET /hourly/{station_id}?start=YYYY-MM-DD&end=YYYY-MM-DD` — proxy + decompress + filter rentang tanggal (max 366 hari per request).
+
+Jalankan lokal:
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+uvicorn app.main:app --reload --port 8001
 ```
 
 ## Catatan tentang sumber data
