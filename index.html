@@ -95,6 +95,7 @@
             <div class="actions">
                 <button id="preview-btn" type="button">Pratinjau Data</button>
                 <button id="download-btn" type="submit" class="primary">&#11015; Unduh Excel (.xlsx)</button>
+                <button id="windrose-btn" type="button" class="windrose-btn">&#127744; Tampilkan Windrose</button>
             </div>
 
             <div id="status" class="status" hidden></div>
@@ -106,6 +107,22 @@
             <div class="table-wrap">
                 <table id="preview-table"></table>
             </div>
+        </section>
+
+        <section id="windrose-section" class="card" hidden>
+            <h2>&#127744; Windrose</h2>
+            <div id="windrose-info" class="muted"></div>
+            <div class="windrose-container">
+                <div class="windrose-chart">
+                    <h3>Blowing From</h3>
+                    <canvas id="windrose-from" width="420" height="420"></canvas>
+                </div>
+                <div class="windrose-chart">
+                    <h3>Blowing To</h3>
+                    <canvas id="windrose-to" width="420" height="420"></canvas>
+                </div>
+            </div>
+            <div class="windrose-legend" id="windrose-legend"></div>
         </section>
     </main>
 

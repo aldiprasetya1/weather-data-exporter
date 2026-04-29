@@ -69,7 +69,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setupCityAutocomplete();
 
+    els.windroseBtn = document.getElementById("windrose-btn");
+    els.windroseSection = document.getElementById("windrose-section");
+    els.windroseInfo = document.getElementById("windrose-info");
+    els.windroseFrom = document.getElementById("windrose-from");
+    els.windroseTo = document.getElementById("windrose-to");
+    els.windroseLegend = document.getElementById("windrose-legend");
+
     els.previewBtn.addEventListener("click", () => handleSubmit({ download: false }));
+    els.windroseBtn.addEventListener("click", () => handleWindrose());
     els.form.addEventListener("submit", (e) => {
         e.preventDefault();
         handleSubmit({ download: true });
@@ -488,4 +496,241 @@ function exportXlsx(result) {
     const safeCity = (city.name || "city").replace(/[^a-z0-9]+/gi, "_");
     const filename = `weather_${safeCity}_${startDate}_to_${endDate}_${granularity}.xlsx`;
     XLSX.writeFile(wb, filename);
+}
+
+// ----- Windrose -----
+
+const WIND_DIRS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+const SPEED_BINS = [
+    { min: 0, max: 5, label: "0\u20135 km/h", color: "#a3d5ff" },
+    { min: 5, max: 10, label: "5\u201310 km/h", color: "#4da6ff" },
+    { min: 10, max: 15, label: "10\u201315 km/h", color: "#0066cc" },
+    { min: 15, max: 20, label: "15\u201320 km/h", color: "#ff9933" },
+    { min: 20, max: Infinity, label: "20+ km/h", color: "#cc3300" },
+];
+
+async function handleWindrose() {
+    if (!state.selectedCity) {
+        showStatus("Pilih kota dulu dari saran pencarian.", "error");
+        return;
+    }
+    const startDate = els.startDate.value;
+    const endDate = els.endDate.value;
+    if (!startDate || !endDate) {
+        showStatus("Isi tanggal mulai dan akhir.", "error");
+        return;
+    }
+    if (startDate > endDate) {
+        showStatus("Tanggal mulai harus lebih awal dari tanggal akhir.", "error");
+        return;
+    }
+
+    setLoading(true);
+    els.windroseBtn.disabled = true;
+    showStatus("Mengambil data angin untuk windrose...", "loading");
+
+    try {
+        const windData = await fetchWindData({
+            city: state.selectedCity,
+            startDate,
+            endDate,
+            timezone: els.timezone.value,
+        });
+
+        const fromBins = binWindData(windData, false);
+        const toBins = binWindData(windData, true);
+
+        drawWindrose(els.windroseFrom, fromBins);
+        drawWindrose(els.windroseTo, toBins);
+        renderWindroseLegend();
+
+        const parts = [state.selectedCity.name];
+        if (state.selectedCity.admin1) parts.push(state.selectedCity.admin1);
+        if (state.selectedCity.country) parts.push(state.selectedCity.country);
+        els.windroseInfo.textContent =
+            `Kota: ${parts.join(", ")} \u00b7 Periode: ${startDate} \u2192 ${endDate}` +
+            ` \u00b7 Total observasi: ${windData.length}`;
+        els.windroseSection.hidden = false;
+
+        showStatus(`Windrose ditampilkan. ${windData.length} data observasi angin.`, "success");
+    } catch (err) {
+        console.error(err);
+        showStatus(`Gagal: ${err.message}`, "error");
+    } finally {
+        setLoading(false);
+        els.windroseBtn.disabled = false;
+    }
+}
+
+async function fetchWindData({ city, startDate, endDate, timezone }) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const archiveCutoff = new Date(today);
+    archiveCutoff.setDate(today.getDate() - 5);
+
+    const start = parseLocalDate(startDate);
+    const end = parseLocalDate(endDate);
+
+    const segments = [];
+    if (end < archiveCutoff) {
+        segments.push({ kind: "archive", start, end });
+    } else if (start >= archiveCutoff) {
+        segments.push({ kind: "forecast", start, end });
+    } else {
+        const archiveEnd = new Date(archiveCutoff);
+        archiveEnd.setDate(archiveEnd.getDate() - 1);
+        segments.push({ kind: "archive", start, end: archiveEnd });
+        segments.push({ kind: "forecast", start: archiveCutoff, end });
+    }
+
+    const windData = [];
+    for (const seg of segments) {
+        const data = await callOpenMeteo({
+            kind: seg.kind,
+            latitude: city.latitude,
+            longitude: city.longitude,
+            startDate: isoDate(seg.start),
+            endDate: isoDate(seg.end),
+            apiVars: ["wind_speed_10m", "wind_direction_10m"],
+            granularity: "hourly",
+            timezone,
+        });
+        const block = data.hourly;
+        if (!block || !block.time) continue;
+        for (let i = 0; i < block.time.length; i++) {
+            const speed = block.wind_speed_10m?.[i];
+            const dir = block.wind_direction_10m?.[i];
+            if (speed != null && dir != null) {
+                windData.push({ speed, direction: dir });
+            }
+        }
+    }
+    return windData;
+}
+
+function binWindData(windData, blowingTo) {
+    const numDirs = WIND_DIRS.length;
+    const binSize = 360 / numDirs;
+    const bins = Array.from({ length: numDirs }, () =>
+        SPEED_BINS.map(() => 0)
+    );
+
+    for (const { speed, direction } of windData) {
+        let dir = direction;
+        if (blowingTo) dir = (dir + 180) % 360;
+        let idx = Math.round(dir / binSize) % numDirs;
+        let speedIdx = SPEED_BINS.findIndex((b) => speed >= b.min && speed < b.max);
+        if (speedIdx === -1) speedIdx = SPEED_BINS.length - 1;
+        bins[idx][speedIdx]++;
+    }
+
+    const total = windData.length || 1;
+    return bins.map((dirBins) => dirBins.map((count) => (count / total) * 100));
+}
+
+function drawWindrose(canvas, bins) {
+    const dpr = window.devicePixelRatio || 1;
+    const size = 420;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = size + "px";
+    canvas.style.height = size + "px";
+
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, size, size);
+
+    const cx = size / 2;
+    const cy = size / 2;
+    const maxRadius = size / 2 - 40;
+
+    const maxPct = Math.max(1, ...bins.map((d) => d.reduce((a, b) => a + b, 0)));
+    const ringStep = Math.ceil(maxPct / 4);
+    const numRings = Math.ceil(maxPct / ringStep);
+
+    ctx.strokeStyle = "#e0e0e0";
+    ctx.lineWidth = 0.5;
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    for (let r = 1; r <= numRings; r++) {
+        const radius = (r / numRings) * maxRadius;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillText(`${r * ringStep}%`, cx + 4, cy - radius + 10);
+    }
+
+    const numDirs = WIND_DIRS.length;
+    const angleStep = (Math.PI * 2) / numDirs;
+    const halfPetal = angleStep * 0.4;
+
+    ctx.strokeStyle = "#d1d5db";
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < numDirs; i++) {
+        const angle = i * angleStep - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(angle) * (maxRadius + 15), cy + Math.sin(angle) * (maxRadius + 15));
+        ctx.stroke();
+    }
+
+    for (let i = 0; i < numDirs; i++) {
+        const angle = i * angleStep - Math.PI / 2;
+        const dirBins = bins[i];
+        let cumPct = 0;
+
+        for (let s = 0; s < SPEED_BINS.length; s++) {
+            const pct = dirBins[s];
+            if (pct <= 0) { cumPct += pct; continue; }
+            const innerR = (cumPct / maxPct) * maxRadius;
+            const outerR = ((cumPct + pct) / maxPct) * maxRadius;
+
+            ctx.beginPath();
+            ctx.moveTo(
+                cx + Math.cos(angle - halfPetal) * innerR,
+                cy + Math.sin(angle - halfPetal) * innerR
+            );
+            ctx.arc(cx, cy, outerR, angle - halfPetal, angle + halfPetal);
+            ctx.lineTo(
+                cx + Math.cos(angle + halfPetal) * innerR,
+                cy + Math.sin(angle + halfPetal) * innerR
+            );
+            if (innerR > 0) {
+                ctx.arc(cx, cy, innerR, angle + halfPetal, angle - halfPetal, true);
+            }
+            ctx.closePath();
+            ctx.fillStyle = SPEED_BINS[s].color;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,0.6)";
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+
+            cumPct += pct;
+        }
+    }
+
+    ctx.fillStyle = "#1f2937";
+    ctx.font = "bold 13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < numDirs; i++) {
+        const angle = i * angleStep - Math.PI / 2;
+        const labelR = maxRadius + 25;
+        const x = cx + Math.cos(angle) * labelR;
+        const y = cy + Math.sin(angle) * labelR;
+        if (i % 2 === 0) {
+            ctx.fillText(WIND_DIRS[i], x, y);
+        }
+    }
+}
+
+function renderWindroseLegend() {
+    els.windroseLegend.innerHTML = "";
+    for (const bin of SPEED_BINS) {
+        const item = document.createElement("div");
+        item.className = "windrose-legend-item";
+        item.innerHTML = `<span class="windrose-legend-swatch" style="background:${bin.color}"></span>${bin.label}`;
+        els.windroseLegend.appendChild(item);
+    }
 }
