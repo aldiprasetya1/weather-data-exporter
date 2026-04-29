@@ -4,12 +4,12 @@ const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 
 const VARIABLE_META = {
     temperature_2m: { label: "Suhu", unit: "\u00b0C", daily: "temperature_2m_mean" },
-    relative_humidity_2m: { label: "Kelembaban", unit: "%", daily: null },
+    relative_humidity_2m: { label: "Kelembaban", unit: "%", daily: "relative_humidity_2m_mean" },
     precipitation: { label: "Presipitasi", unit: "mm", daily: "precipitation_sum" },
-    cloud_cover: { label: "Tutupan awan", unit: "%", daily: null },
-    cloud_cover_low: { label: "Awan rendah", unit: "%", daily: null },
-    cloud_cover_mid: { label: "Awan menengah", unit: "%", daily: null },
-    cloud_cover_high: { label: "Awan tinggi", unit: "%", daily: null },
+    cloud_cover: { label: "Tutupan awan", unit: "%", daily: "cloud_cover_mean" },
+    cloud_cover_low: { label: "Awan rendah", unit: "%", daily: "cloud_cover_low_mean" },
+    cloud_cover_mid: { label: "Awan menengah", unit: "%", daily: "cloud_cover_mid_mean" },
+    cloud_cover_high: { label: "Awan tinggi", unit: "%", daily: "cloud_cover_high_mean" },
     wind_speed_10m: { label: "Kecepatan angin 10m", unit: "km/jam", daily: "wind_speed_10m_max" },
     wind_direction_10m: {
         label: "Arah angin 10m",
@@ -17,7 +17,7 @@ const VARIABLE_META = {
         daily: "wind_direction_10m_dominant",
     },
     wind_gusts_10m: { label: "Hembusan angin 10m", unit: "km/jam", daily: "wind_gusts_10m_max" },
-    surface_pressure: { label: "Tekanan permukaan", unit: "hPa", daily: null },
+    surface_pressure: { label: "Tekanan permukaan", unit: "hPa", daily: "surface_pressure_mean" },
     weather_code: { label: "Kode cuaca (WMO)", unit: "", daily: "weather_code" },
 };
 
@@ -25,10 +25,16 @@ const DAILY_LABEL = {
     temperature_2m_mean: { label: "Suhu rata-rata", unit: "\u00b0C" },
     temperature_2m_max: { label: "Suhu maks", unit: "\u00b0C" },
     temperature_2m_min: { label: "Suhu min", unit: "\u00b0C" },
+    relative_humidity_2m_mean: { label: "Kelembaban rata-rata", unit: "%" },
     precipitation_sum: { label: "Total presipitasi", unit: "mm" },
+    cloud_cover_mean: { label: "Tutupan awan rata-rata", unit: "%" },
+    cloud_cover_low_mean: { label: "Awan rendah rata-rata", unit: "%" },
+    cloud_cover_mid_mean: { label: "Awan menengah rata-rata", unit: "%" },
+    cloud_cover_high_mean: { label: "Awan tinggi rata-rata", unit: "%" },
     wind_speed_10m_max: { label: "Kecepatan angin maks", unit: "km/jam" },
     wind_gusts_10m_max: { label: "Hembusan angin maks", unit: "km/jam" },
     wind_direction_10m_dominant: { label: "Arah angin dominan", unit: "\u00b0" },
+    surface_pressure_mean: { label: "Tekanan permukaan rata-rata", unit: "hPa" },
     weather_code: { label: "Kode cuaca (WMO)", unit: "" },
 };
 
@@ -350,7 +356,7 @@ function mapVariables(selected, granularity) {
         }
     }
     if (!out.length) {
-        out.push("temperature_2m_mean", "precipitation_sum");
+        throw new Error("Variabel yang dipilih tidak tersedia untuk granularitas harian.");
     }
     return out;
 }
@@ -394,7 +400,7 @@ async function callOpenMeteo({
     if (!res.ok) {
         let detail = "";
         try {
-            const j = await res.json();
+            const j = await res.clone().json();
             detail = j.reason || JSON.stringify(j);
         } catch (_) {
             detail = await res.text();
