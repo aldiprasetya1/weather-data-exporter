@@ -69,6 +69,10 @@ main {
     flex: 1;
 }
 
+.field[hidden] {
+    display: none;
+}
+
 .field label {
     font-size: 13px;
     font-weight: 500;
@@ -154,6 +158,10 @@ main {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 6px 12px;
+}
+
+.checkbox-grid[hidden] {
+    display: none;
 }
 
 .check {
@@ -304,6 +312,39 @@ footer a { color: var(--primary); }
     height: 12px;
     border-radius: 2px;
     border: 1px solid rgba(0,0,0,0.15);
+}
+
+.meteostat-var-list {
+    padding: 0;
+}
+
+.meteostat-var-list .var-list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.8;
+}
+
+.meteostat-var-list .var-list li {
+    padding: 2px 0;
+}
+
+#station-search {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    width: 100%;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#station-search:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 @media (max-width: 600px) {
