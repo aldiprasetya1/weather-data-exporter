@@ -555,7 +555,7 @@ function showStatus(msg, type = "info") {
 
 async function fetchMeteostatDaily({ station, startDate, endDate, apiKey }) {
     const url = `${METEOSTAT_API}/stations/daily?station=${station.id}` +
-        `&start=${startDate}&end=${endDate}&units=scientific`;
+        `&start=${startDate}&end=${endDate}`;
 
     const res = await fetch(url, {
         headers: {
@@ -591,7 +591,7 @@ async function fetchMeteostatDaily({ station, startDate, endDate, apiKey }) {
         d.date,
         d.tavg,
         d.prcp,
-        d.wspd,
+        d.wspd != null ? +(d.wspd / 3.6).toFixed(2) : null,
         d.wdir,
         d.tsun != null ? +(d.tsun / 60).toFixed(2) : null,
     ]);
