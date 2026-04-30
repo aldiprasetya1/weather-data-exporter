@@ -242,6 +242,7 @@ function setupSourceSwitcher() {
                 "Sumber: observasi stasiun Meteostat (NOAA ISD/SYNOP). " +
                 "Data harian, hingga 10 tahun ke belakang. Kecepatan angin dalam m/s.";
         } else {
+            els.granularity.value = "hourly";
             els.sourceNote.textContent =
                 "Sumber: ERA5 reanalysis (1940 \u2013 ~5 hari yang lalu) untuk historis, " +
                 "dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.";
