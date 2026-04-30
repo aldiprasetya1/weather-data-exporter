@@ -399,6 +399,7 @@ function setupCityAutocomplete() {
         els.selectedCity.innerHTML = `Terpilih: <strong>${escapeHtml(parts.join(", "))}</strong>
             (${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)},
             zona waktu: ${escapeHtml(r.timezone || "auto")})`;
+        els.selectedCity.classList.add("success");
         hideSuggestions();
     }
 }
