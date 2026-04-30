@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather Data Exporter</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#127782;</text></svg>" />
+</head>
+<body>
+    <header>
+        <h1>&#127782; Weather Data Exporter</h1>
+        <p class="subtitle">
+            Ambil data cuaca historis &amp; forecast, lalu ekspor ke Excel.
+            Sumber data:
+            <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> &amp;
+            <a href="https://meteostat.net/" target="_blank" rel="noopener">Meteostat</a>.
+        </p>
+    </header>
+
+    <main>
+        <form id="weather-form">
+            <section class="card">
+                <h2>1. Sumber Data</h2>
+                <div class="row">
+                    <div class="field">
+                        <label for="data-source">Pilih sumber data</label>
+                        <select id="data-source">
+                            <option value="open-meteo" selected>Open-Meteo (gratis, tanpa API key)</option>
+                            <option value="meteostat">Meteostat (observasi stasiun NOAA ISD/SYNOP)</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="meteostat-key-section" hidden>
+                    <div class="field">
+                        <label for="rapidapi-key">RapidAPI Key</label>
+                        <input
+                            id="rapidapi-key"
+                            type="password"
+                            placeholder="Masukkan RapidAPI key Anda..."
+                            autocomplete="off"
+                        />
+                        <p class="muted">
+                            Dapatkan API key gratis (500 req/bulan) di
+                            <a href="https://rapidapi.com/meteostat/api/meteostat/" target="_blank" rel="noopener">RapidAPI Meteostat</a>.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card" id="city-section">
+                <h2>2. Pilih Kota</h2>
+                <div class="field">
+                    <label for="city-input">Nama kota</label>
+                    <div class="autocomplete">
+                        <input
+                            id="city-input"
+                            type="text"
+                            placeholder="Contoh: Jakarta, Surabaya, Bandung..."
+                            autocomplete="off"
+                        />
+                        <ul id="city-suggestions" class="suggestions" hidden></ul>
+                    </div>
+                    <p id="selected-city" class="muted">Belum ada kota yang dipilih.</p>
+                </div>
+            </section>
+
+            <section class="card" id="station-section" hidden>
+                <h2>2. Pilih Stasiun Cuaca</h2>
+                <div class="field">
+                    <label for="station-search">Cari stasiun (Indonesia)</label>
+                    <input
+                        id="station-search"
+                        type="text"
+                        placeholder="Ketik nama stasiun... (contoh: Jakarta, Surabaya)"
+                        autocomplete="off"
+                    />
+                </div>
+                <div class="field">
+                    <label for="station-select">Stasiun cuaca</label>
+                    <select id="station-select">
+                        <option value="">-- Pilih stasiun --</option>
+                    </select>
+                    <p id="selected-station" class="muted">Belum ada stasiun yang dipilih.</p>
+                </div>
+                <p class="muted">
+                    111 stasiun cuaca Indonesia (NOAA ISD/SYNOP).
+                    Data harian, hingga 10 tahun ke belakang.
+                </p>
+            </section>
+
+            <section class="card">
+                <h2 id="period-title">3. Periode Waktu</h2>
+                <div class="row">
+                    <div class="field">
+                        <label for="start-date">Tanggal mulai</label>
+                        <input id="start-date" type="date" required />
+                    </div>
+                    <div class="field">
+                        <label for="end-date">Tanggal akhir</label>
+                        <input id="end-date" type="date" required />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="field" id="granularity-field">
+                        <label for="granularity">Granularitas</label>
+                        <select id="granularity">
+                            <option value="hourly" selected>Per jam (hourly)</option>
+                            <option value="daily">Per hari (daily)</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="timezone">Zona waktu</label>
+                        <select id="timezone">
+                            <option value="auto" selected>Auto (sesuai lokasi kota)</option>
+                            <option value="Asia/Jakarta">Asia/Jakarta (WIB)</option>
+                            <option value="Asia/Makassar">Asia/Makassar (WITA)</option>
+                            <option value="Asia/Jayapura">Asia/Jayapura (WIT)</option>
+                            <option value="UTC">UTC</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="muted" id="source-note">
+                    Sumber: ERA5 reanalysis (1940 &ndash; ~5 hari yang lalu) untuk historis,
+                    dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.
+                </p>
+            </section>
+
+            <section class="card" id="variable-section">
+                <h2 id="variable-title">4. Variabel Cuaca</h2>
+                <div id="openmeteo-vars" class="checkbox-grid">
+                    <label class="check"><input type="checkbox" name="var" value="temperature_2m" checked> Suhu (&deg;C)</label>
+                    <label class="check"><input type="checkbox" name="var" value="relative_humidity_2m" checked> Kelembaban (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="precipitation" checked> Presipitasi (mm)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover" checked> Tutupan awan total (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_low"> Awan rendah (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_mid"> Awan menengah (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="cloud_cover_high"> Awan tinggi (%)</label>
+                    <label class="check"><input type="checkbox" name="var" value="wind_speed_10m" checked> Kecepatan angin 10m (m/s)</label>
+                    <label class="check"><input type="checkbox" name="var" value="wind_direction_10m" checked> Arah angin 10m (&deg;)</label>
+                    <label class="check"><input type="checkbox" name="var" value="wind_gusts_10m" checked> Hembusan angin 10m (m/s)</label>
+                    <label class="check"><input type="checkbox" name="var" value="surface_pressure"> Tekanan permukaan (hPa)</label>
+                    <label class="check"><input type="checkbox" name="var" value="weather_code"> Kode cuaca (WMO)</label>
+                </div>
+                <div id="meteostat-vars" class="meteostat-var-list" hidden>
+                    <p class="muted">Lima variabel harian (otomatis):</p>
+                    <ul class="var-list">
+                        <li>Suhu rata-rata (&deg;C)</li>
+                        <li>Curah hujan / presipitasi (mm)</li>
+                        <li>Kecepatan angin rata-rata (m/s)</li>
+                        <li>Arah angin dominan (&deg;)</li>
+                        <li>Lama penyinaran matahari (jam)</li>
+                    </ul>
+                </div>
+            </section>
+
+            <div class="actions">
+                <button id="preview-btn" type="button">Pratinjau Data</button>
+                <button id="download-btn" type="submit" class="primary">&#11015; Unduh Excel (.xlsx)</button>
+                <button id="windrose-btn" type="button" class="windrose-btn">&#127744; Tampilkan Windrose</button>
+            </div>
+
+            <div id="status" class="status" hidden></div>
+        </form>
+
+        <section id="preview-section" class="card" hidden>
+            <h2>Pratinjau (50 baris pertama)</h2>
+            <div id="preview-info" class="muted"></div>
+            <div class="table-wrap">
+                <table id="preview-table"></table>
+            </div>
+        </section>
+
+        <section id="windrose-section" class="card" hidden>
+            <h2>&#127744; Windrose</h2>
+            <div id="windrose-info" class="muted"></div>
+            <div class="windrose-container">
+                <div class="windrose-chart">
+                    <h3>Blowing From</h3>
+                    <canvas id="windrose-from" width="420" height="420"></canvas>
+                </div>
+                <div class="windrose-chart">
+                    <h3>Blowing To</h3>
+                    <canvas id="windrose-to" width="420" height="420"></canvas>
+                </div>
+            </div>
+            <div class="windrose-legend" id="windrose-legend"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>
+            Dibuat dengan
+            <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo API</a>,
+            <a href="https://meteostat.net/" target="_blank" rel="noopener">Meteostat</a>
+            &amp;
+            <a href="https://sheetjs.com/" target="_blank" rel="noopener">SheetJS</a>.
+        </p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
