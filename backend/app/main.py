@@ -68,6 +68,8 @@ STATIONS_BY_ID = {s["id"]: s for s in STATIONS}
 
 METEOSTAT_BULK_BASE = "https://bulk.meteostat.net/v2/hourly"
 METEOSTAT_DAILY_BASE = "https://bulk.meteostat.net/v2/daily"
+OPENMETEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 HTTP_TIMEOUT = 30.0
 MAX_RANGE_DAYS = 366  # one year max per request
 
@@ -239,8 +241,39 @@ async def daily(
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         rows = await _fetch_daily(client, station_id)
 
-    rows = [r for r in rows if start <= r["date"] <= end]
-    rows.sort(key=lambda r: r["date"])
+        rows = [r for r in rows if start <= r["date"] <= end]
+        rows.sort(key=lambda r: r["date"])
+
+        # Meteostat's `tsun` field is frequently null for Indonesian stations
+        # because most BMKG stations don't report calibrated sunshine duration
+        # via SYNOP. Backfill those gaps from Open-Meteo's ERA5-based
+        # `sunshine_duration` for the station's coordinate, so users get the
+        # same column populated regardless of source. The Info sheet exposes
+        # which dates were backfilled so the substitution is transparent.
+        missing_dates = sorted(
+            r["date"] for r in rows if r.get("tsun") is None
+        )
+        backfill_dates: list[str] = []
+        backfill_error: str | None = None
+        if missing_dates:
+            try:
+                filled = await _fetch_sunshine_backfill(
+                    client,
+                    lat=station["latitude"],
+                    lon=station["longitude"],
+                    start=start_d,
+                    end=end_d,
+                )
+            except Exception as exc:  # pragma: no cover - network is flaky
+                filled = {}
+                backfill_error = str(exc)
+            for r in rows:
+                if r.get("tsun") is None and r["date"] in filled:
+                    seconds = filled[r["date"]]
+                    if seconds is not None:
+                        # Meteostat tsun is in minutes; convert seconds -> min.
+                        r["tsun"] = round(seconds / 60.0, 2)
+                        backfill_dates.append(r["date"])
 
     out_cols = ["time"] + [c for c in METEOSTAT_DAILY_COLS if c != "date"]
     out_rows = []
@@ -261,7 +294,66 @@ async def daily(
         "rows": out_rows,
         "count": len(out_rows),
         "range": {"start": start, "end": end},
+        "tsun_backfill": {
+            "source": "open-meteo-era5",
+            "dates": backfill_dates,
+            "error": backfill_error,
+        },
     }
+
+
+async def _fetch_sunshine_backfill(
+    client: httpx.AsyncClient,
+    *,
+    lat: float,
+    lon: float,
+    start: date,
+    end: date,
+) -> dict[str, float | None]:
+    """Fetch daily Open-Meteo sunshine duration (seconds) for `lat`/`lon`.
+
+    Splits the requested range into archive (past) and forecast segments
+    based on ``today - 5 days`` to stay within the typical coverage of
+    each Open-Meteo endpoint. Returns a mapping of ``YYYY-MM-DD`` to
+    sunshine seconds (may be ``None`` for dates the upstream has no data
+    for).
+    """
+    cutoff = date.today() - timedelta(days=5)
+    segments: list[tuple[str, date, date]] = []
+    if start <= cutoff:
+        segments.append(
+            (OPENMETEO_ARCHIVE_URL, start, min(end, cutoff))
+        )
+    if end > cutoff:
+        segments.append(
+            (OPENMETEO_FORECAST_URL, max(start, cutoff + timedelta(days=1)), end)
+        )
+
+    merged: dict[str, float | None] = {}
+    for url, seg_start, seg_end in segments:
+        if seg_start > seg_end:
+            continue
+        params = {
+            "latitude": f"{lat}",
+            "longitude": f"{lon}",
+            "start_date": seg_start.isoformat(),
+            "end_date": seg_end.isoformat(),
+            "daily": "sunshine_duration",
+            "timezone": "UTC",
+        }
+        resp = await client.get(url, params=params, follow_redirects=True)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Open-Meteo upstream {resp.status_code} for {url}: "
+                f"{resp.text[:200]}"
+            )
+        data = resp.json()
+        daily = (data or {}).get("daily") or {}
+        times = daily.get("time") or []
+        values = daily.get("sunshine_duration") or []
+        for d, v in zip(times, values):
+            merged[d] = v
+    return merged
 
 
 async def _fetch_daily(client: httpx.AsyncClient, station_id: str) -> list[dict]:

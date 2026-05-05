@@ -1024,6 +1024,52 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         ...METEOSTAT_DISPLAY_COLS.map((c) => `${c.label} (${c.unit})`),
     ];
 
+    // Meteostat's `tsun` is frequently null for Indonesian stations because
+    // most BMKG SYNOP reports omit calibrated sunshine duration. Backfill
+    // those gaps from Open-Meteo ERA5 (same endpoint proxied by the backend,
+    // so the same Bearer token authenticates the request).
+    const tsunIdx = colIdx.tsun_h; // `tsun` column index (from backend)
+    const missingDates = [];
+    if (tsunIdx >= 0 && timeIdx >= 0) {
+        for (const r of data.rows) {
+            if (r[tsunIdx] == null) missingDates.push(r[timeIdx]);
+        }
+    }
+    const backfill = {
+        source: "open-meteo-era5",
+        dates: [],
+        error: null,
+    };
+    // Honor any server-side backfill that already happened so we don't
+    // double-count when the volume-backed backend is eventually redeployed.
+    if (data.tsun_backfill && Array.isArray(data.tsun_backfill.dates)) {
+        backfill.dates = data.tsun_backfill.dates.slice();
+    }
+    if (missingDates.length > 0 && tsunIdx >= 0 && timeIdx >= 0) {
+        try {
+            const fill = await fetchOpenMeteoSunshine({
+                lat: station.latitude,
+                lon: station.longitude,
+                startDate,
+                endDate,
+            });
+            for (const r of data.rows) {
+                if (r[tsunIdx] == null) {
+                    const d = r[timeIdx];
+                    const seconds = fill[d];
+                    if (seconds != null) {
+                        // Meteostat tsun is in minutes; convert seconds -> min
+                        // so the downstream /60 -> hours path stays valid.
+                        r[tsunIdx] = round2(seconds / 60);
+                        backfill.dates.push(d);
+                    }
+                }
+            }
+        } catch (exc) {
+            backfill.error = exc.message || String(exc);
+        }
+    }
+
     const rows = data.rows.map((r) => {
         const out = [timeIdx >= 0 ? r[timeIdx] : null];
         for (const c of METEOSTAT_DISPLAY_COLS) {
@@ -1061,8 +1107,59 @@ async function fetchMeteostat({ station, startDate, endDate }) {
             endDate,
             granularity: "daily",
             columns: data.columns,
+            tsunBackfill: backfill,
         },
     };
+}
+
+// Fetch daily sunshine_duration (seconds) from Open-Meteo for a
+// coordinate and date range. Splits the range between the archive
+// endpoint (past) and the forecast endpoint (recent/future) based on
+// today - 5 days, matching typical Open-Meteo coverage. Returns
+// { "YYYY-MM-DD": seconds | null }.
+async function fetchOpenMeteoSunshine({ lat, lon, startDate, endDate }) {
+    const start = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    const cutoff = new Date();
+    cutoff.setUTCHours(0, 0, 0, 0);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 5);
+
+    const segments = [];
+    if (start <= cutoff) {
+        const segEnd = end < cutoff ? end : cutoff;
+        segments.push({ url: ARCHIVE_URL, start, end: segEnd });
+    }
+    if (end > cutoff) {
+        const segStart = start > cutoff
+            ? start
+            : new Date(cutoff.getTime() + 86400000);
+        segments.push({ url: FORECAST_URL, start: segStart, end });
+    }
+
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const out = {};
+    for (const seg of segments) {
+        if (seg.start > seg.end) continue;
+        const params = new URLSearchParams({
+            latitude: String(lat),
+            longitude: String(lon),
+            start_date: iso(seg.start),
+            end_date: iso(seg.end),
+            daily: "sunshine_duration",
+            timezone: "UTC",
+        });
+        const url = `${seg.url}?${params.toString()}`;
+        const res = await apiFetch(url);
+        if (!res.ok) {
+            const t = await res.text();
+            throw new Error(`Open-Meteo ${res.status}: ${t.slice(0, 200)}`);
+        }
+        const data = await res.json();
+        const times = (data.daily && data.daily.time) || [];
+        const vals = (data.daily && data.daily.sunshine_duration) || [];
+        for (let i = 0; i < times.length; i++) out[times[i]] = vals[i];
+    }
+    return out;
 }
 
 // ----- Preview -----
@@ -1112,11 +1209,17 @@ function describeResult(result) {
     if (result.source === "meteostat") {
         const s = result.meta.station;
         const wmo = s.wmo || s.id;
+        const bf = result.meta.tsunBackfill || {};
+        const bfCount = Array.isArray(bf.dates) ? bf.dates.length : 0;
+        const bfNote = bfCount > 0
+            ? ` · Lama penyinaran: ${bfCount} hari di-backfill dari Open-Meteo ERA5`
+            : "";
         return (
             `Stasiun: ${s.name} (WMO ${wmo}` +
             (s.icao ? ` / ${s.icao}` : "") +
             `) · Periode: ${result.meta.startDate} → ${result.meta.endDate}` +
-            ` · Sumber: Meteostat (NOAA ISD/SYNOP, harian) · Total baris: ${result.rows.length}`
+            ` · Sumber: Meteostat (NOAA ISD/SYNOP, harian) · Total baris: ${result.rows.length}` +
+            bfNote
         );
     }
     const c = result.meta.city;
@@ -1197,6 +1300,24 @@ function buildMetaRows(result) {
     if (result.source === "meteostat") {
         const s = result.meta.station;
         const wmo = s.wmo || s.id;
+        const bf = result.meta.tsunBackfill || {};
+        const bfDates = Array.isArray(bf.dates) ? bf.dates : [];
+        let sunshineNote =
+            "Lama penyinaran berasal dari kolom Meteostat 'tsun' (menit) " +
+            "yang dikonversi ke jam (÷60).";
+        if (bfDates.length > 0) {
+            const shown = bfDates.slice(0, 10).join(", ");
+            const more = bfDates.length > 10
+                ? ` … (+${bfDates.length - 10} lainnya)`
+                : "";
+            sunshineNote +=
+                ` ${bfDates.length} tanggal di-backfill dari Open-Meteo ERA5 ` +
+                `(sunshine_duration, detik ÷ 60) karena 'tsun' Meteostat kosong: ` +
+                `${shown}${more}.`;
+        }
+        if (bf.error) {
+            sunshineNote += ` Backfill gagal sebagian: ${bf.error}.`;
+        }
         return [
             ["Field", "Value"],
             ["Sumber", "Meteostat (NOAA ISD / SYNOP via bulk.meteostat.net)"],
@@ -1213,11 +1334,7 @@ function buildMetaRows(result) {
             ["Granularitas", "daily"],
             ["Satuan kecepatan angin", "m/s"],
             ["Variabel", variableList],
-            [
-                "Catatan penyinaran",
-                "Lama penyinaran berasal dari kolom Meteostat 'tsun' (menit) " +
-                    "yang dikonversi ke jam (÷60).",
-            ],
+            ["Catatan penyinaran", sunshineNote],
             ["Diunduh pada", new Date().toISOString()],
         ];
     }
