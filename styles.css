@@ -35,7 +35,7 @@ header {
 }
 
 .brand-logo {
-    width: 96px;
+    width: 140px;
     height: auto;
     flex-shrink: 0;
 }
@@ -60,7 +60,7 @@ header h1 {
 
 @media (max-width: 560px) {
     .brand { gap: 12px; }
-    .brand-logo { width: 64px; }
+    .brand-logo { width: 88px; }
     header h1 { font-size: 22px; }
 }
 
