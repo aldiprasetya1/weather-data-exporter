@@ -5,6 +5,19 @@
   "installCommand": null,
   "outputDirectory": ".",
   "cleanUrls": true,
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "backend/**",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/healthz", "destination": "/api/index" },
+    { "source": "/stations", "destination": "/api/index" },
+    { "source": "/daily/(.*)", "destination": "/api/index" },
+    { "source": "/hourly/(.*)", "destination": "/api/index" }
+  ],
   "headers": [
     {
       "source": "/(index.html)?",
