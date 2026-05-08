@@ -8,6 +8,27 @@
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
     <link rel="icon" type="image/png" sizes="128x128" href="assets/favicon.png" />
     <link rel="apple-touch-icon" href="assets/favicon.png" />
+    <!-- Leaflet (peta interaktif) + leaflet-draw (gambar kotak area) -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""
+    />
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
+    />
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""
+        defer
+    ></script>
+    <script
+        src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"
+        defer
+    ></script>
 </head>
 <body>
     <header>
@@ -132,19 +153,76 @@
             </section>
 
             <section id="city-section" class="card">
-                <h2>2. Pilih Kota</h2>
-                <div class="field">
-                    <label for="city-input">Nama kota</label>
-                    <div class="autocomplete">
-                        <input
-                            id="city-input"
-                            type="text"
-                            placeholder="Contoh: Jakarta, Surabaya, Bandung..."
-                            autocomplete="off"
-                        />
-                        <ul id="city-suggestions" class="suggestions" hidden></ul>
+                <h2>2. Pilih Lokasi</h2>
+                <div class="tabs" role="tablist" aria-label="Cara pilih lokasi">
+                    <button
+                        type="button"
+                        class="tab active"
+                        role="tab"
+                        data-tab="city-name"
+                        aria-selected="true"
+                    >Cari Nama Kota</button>
+                    <button
+                        type="button"
+                        class="tab"
+                        role="tab"
+                        data-tab="city-map"
+                        aria-selected="false"
+                    >Pilih di Peta</button>
+                </div>
+
+                <div id="city-tab-name" class="tab-panel" role="tabpanel">
+                    <div class="field">
+                        <label for="city-input">Nama kota</label>
+                        <div class="autocomplete">
+                            <input
+                                id="city-input"
+                                type="text"
+                                placeholder="Contoh: Jakarta, Surabaya, Bandung..."
+                                autocomplete="off"
+                            />
+                            <ul id="city-suggestions" class="suggestions" hidden></ul>
+                        </div>
+                        <p id="selected-city" class="muted">Belum ada kota yang dipilih.</p>
                     </div>
-                    <p id="selected-city" class="muted">Belum ada kota yang dipilih.</p>
+                </div>
+
+                <div id="city-tab-map" class="tab-panel" role="tabpanel" hidden>
+                    <div class="map-controls">
+                        <div class="mode-toggle" role="radiogroup" aria-label="Mode peta">
+                            <label class="radio-inline">
+                                <input
+                                    type="radio"
+                                    name="map-mode"
+                                    value="pin"
+                                    checked
+                                />
+                                <span>📍 Pin tunggal</span>
+                            </label>
+                            <label class="radio-inline">
+                                <input
+                                    type="radio"
+                                    name="map-mode"
+                                    value="area"
+                                />
+                                <span>▢ Area (kotak → grid)</span>
+                            </label>
+                        </div>
+                        <button
+                            id="map-clear-btn"
+                            type="button"
+                            class="link-button"
+                        >Hapus pilihan</button>
+                    </div>
+                    <div id="map-canvas" class="map-canvas"></div>
+                    <p id="map-help" class="muted">
+                        <strong>Pin tunggal:</strong> klik di peta untuk taruh
+                        marker. Marker bisa digeser. <strong>Area:</strong>
+                        gambar kotak — sistem otomatis membentuk grid 3×3
+                        (kotak kecil &lt; 1°) atau 5×5 (lebih besar) lalu
+                        merata-ratakan data semua titik per hari.
+                    </p>
+                    <p id="selected-location" class="muted">Belum ada lokasi yang dipilih di peta.</p>
                 </div>
             </section>
 

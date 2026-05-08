@@ -73,6 +73,15 @@ const state = {
     source: "openmeteo", // "openmeteo" | "meteostat" | "power"
     selectedCity: null,
     selectedStation: null,
+    // Consolidated location used by Open-Meteo & NASA POWER fetchers.
+    // `mode`: how the user picked the location; `points`: 1 entry for pin/city,
+    // 9 (3x3) or 25 (5x5) for area; `bbox`: [west, south, east, north] when in
+    // area mode (else null); `label`: short summary for UI/Excel.
+    location: null,
+    locationMode: "city", // active tab: "city" | "map"
+    map: null, // Leaflet map instance (lazy)
+    mapMode: "pin", // "pin" | "area"
+    mapLayers: { pin: null, areaRect: null, gridPoints: null, draw: null },
     stations: [],
     lastResult: null, // {headers, rows, meta, windRows: [{dir, spd}]}
     windroseMode: "from", // "from" (asal angin) | "to" (arah hembusan)
@@ -362,6 +371,8 @@ document.addEventListener("DOMContentLoaded", () => {
     els.cityInput = document.getElementById("city-input");
     els.suggestions = document.getElementById("city-suggestions");
     els.selectedCity = document.getElementById("selected-city");
+    els.selectedLocation = document.getElementById("selected-location");
+    els.mapCanvas = document.getElementById("map-canvas");
     els.citySection = document.getElementById("city-section");
     els.stationSection = document.getElementById("station-section");
     els.stationSearch = document.getElementById("station-search");
@@ -400,6 +411,8 @@ document.addEventListener("DOMContentLoaded", () => {
     setupSourceToggle();
     setupCityAutocomplete();
     setupStationPicker();
+    setupLocationTabs();
+    setupMapControls();
 
     els.previewBtn.addEventListener("click", () => handleSubmit({ download: false }));
     els.form.addEventListener("submit", (e) => {
@@ -482,6 +495,9 @@ function setupCityAutocomplete() {
     els.cityInput.addEventListener("input", () => {
         const q = els.cityInput.value.trim();
         state.selectedCity = null;
+        if (state.location && state.location.mode === "city") {
+            state.location = null;
+        }
         els.selectedCity.textContent = "Belum ada kota yang dipilih.";
         clearTimeout(debounceTimer);
         if (q.length < 2) {
@@ -570,6 +586,24 @@ function setupCityAutocomplete() {
             (${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)},
             zona waktu: ${escapeHtml(r.timezone || "auto")})`;
         hideSuggestions();
+        // City autocomplete is the active picker → mirror into state.location
+        // so the unified fetch path treats it like a 1-point pin.
+        state.location = {
+            mode: "city",
+            label: parts.join(", "),
+            points: [{
+                latitude: r.latitude,
+                longitude: r.longitude,
+                name: r.name,
+                admin1: r.admin1,
+                country: r.country,
+                timezone: r.timezone,
+            }],
+            bbox: null,
+            gridSize: 1,
+            timezone: r.timezone || null,
+        };
+        state.locationMode = "city";
     }
 }
 
@@ -638,6 +672,290 @@ function selectStation(s) {
         `${escapeHtml(s.timezone || "")})`;
 }
 
+// ----- Map picker (Leaflet, for Open-Meteo & NASA POWER) -----
+
+function setupLocationTabs() {
+    const tabs = document.querySelectorAll('#city-section .tab');
+    tabs.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const target = btn.dataset.tab; // "city-name" | "city-map"
+            tabs.forEach((b) => {
+                const active = b === btn;
+                b.classList.toggle('active', active);
+                b.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            const namePanel = document.getElementById('city-tab-name');
+            const mapPanel = document.getElementById('city-tab-map');
+            if (target === 'city-map') {
+                namePanel.hidden = true;
+                mapPanel.hidden = false;
+                state.locationMode = 'map';
+                ensureMap();
+            } else {
+                namePanel.hidden = false;
+                mapPanel.hidden = true;
+                state.locationMode = 'city';
+            }
+        });
+    });
+}
+
+function setupMapControls() {
+    const radios = document.querySelectorAll('input[name="map-mode"]');
+    radios.forEach((r) =>
+        r.addEventListener('change', () => {
+            state.mapMode = r.value;
+            applyMapMode();
+        })
+    );
+    const clearBtn = document.getElementById('map-clear-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => clearMapSelection());
+    }
+}
+
+function ensureMap() {
+    // Lazy init: Leaflet may not be ready when the page is constructed (it's
+    // loaded with `defer`), and the map div has 0 height until visible.
+    if (state.map) {
+        // Make sure Leaflet recomputes container size after the panel becomes
+        // visible (otherwise tiles render gray).
+        setTimeout(() => state.map.invalidateSize(), 50);
+        return;
+    }
+    if (typeof L === 'undefined') {
+        // Leaflet still loading — try again shortly.
+        setTimeout(ensureMap, 200);
+        return;
+    }
+    const map = L.map('map-canvas', {
+        center: [-2.5, 117.0], // tengah Indonesia
+        zoom: 5,
+        worldCopyJump: true,
+    });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+    }).addTo(map);
+
+    state.map = map;
+    state.mapLayers.draw = L.featureGroup().addTo(map);
+
+    map.on('click', (e) => {
+        if (state.mapMode === 'pin') {
+            setPin(e.latlng.lat, e.latlng.lng);
+        }
+        // In area mode the click is intentionally ignored — user must use
+        // the rectangle draw control in the top-left corner instead.
+    });
+
+    applyMapMode();
+    setTimeout(() => map.invalidateSize(), 50);
+}
+
+function applyMapMode() {
+    if (!state.map) return;
+    // Clear any active draw control so we can rebuild for the new mode.
+    if (state.mapLayers.drawControl) {
+        state.map.removeControl(state.mapLayers.drawControl);
+        state.mapLayers.drawControl = null;
+    }
+    if (state.mapMode === 'area') {
+        // Show a rectangle-only Leaflet.draw toolbar.
+        if (typeof L === 'undefined' || !L.Control.Draw) return;
+        const drawControl = new L.Control.Draw({
+            position: 'topleft',
+            draw: {
+                polyline: false,
+                polygon: false,
+                circle: false,
+                circlemarker: false,
+                marker: false,
+                rectangle: {
+                    shapeOptions: {
+                        color: '#2563eb',
+                        weight: 2,
+                        fillOpacity: 0.08,
+                    },
+                    showArea: false,
+                },
+            },
+            edit: false,
+        });
+        state.map.addControl(drawControl);
+        state.mapLayers.drawControl = drawControl;
+        state.map.off(L.Draw.Event.CREATED).on(L.Draw.Event.CREATED, (e) => {
+            if (e.layerType !== 'rectangle') return;
+            const b = e.layer.getBounds();
+            setArea(
+                b.getWest(),
+                b.getSouth(),
+                b.getEast(),
+                b.getNorth()
+            );
+        });
+    }
+    // In pin mode there's no draw control — clicks on the map handle it.
+}
+
+function clearMapSelection() {
+    if (!state.map) return;
+    if (state.mapLayers.pin) {
+        state.map.removeLayer(state.mapLayers.pin);
+        state.mapLayers.pin = null;
+    }
+    if (state.mapLayers.areaRect) {
+        state.map.removeLayer(state.mapLayers.areaRect);
+        state.mapLayers.areaRect = null;
+    }
+    if (state.mapLayers.gridPoints) {
+        state.map.removeLayer(state.mapLayers.gridPoints);
+        state.mapLayers.gridPoints = null;
+    }
+    if (state.mapLayers.draw) state.mapLayers.draw.clearLayers();
+    state.location = null;
+    state.selectedCity = null;
+    if (els.selectedLocation) {
+        els.selectedLocation.textContent =
+            'Belum ada lokasi yang dipilih di peta.';
+    }
+}
+
+function setPin(lat, lon) {
+    if (!state.map) return;
+    if (state.mapLayers.pin) state.map.removeLayer(state.mapLayers.pin);
+    if (state.mapLayers.areaRect) {
+        state.map.removeLayer(state.mapLayers.areaRect);
+        state.mapLayers.areaRect = null;
+    }
+    if (state.mapLayers.gridPoints) {
+        state.map.removeLayer(state.mapLayers.gridPoints);
+        state.mapLayers.gridPoints = null;
+    }
+    if (state.mapLayers.draw) state.mapLayers.draw.clearLayers();
+
+    const marker = L.marker([lat, lon], { draggable: true }).addTo(state.map);
+    marker.on('dragend', () => {
+        const ll = marker.getLatLng();
+        commitPin(ll.lat, ll.lng);
+    });
+    state.mapLayers.pin = marker;
+    commitPin(lat, lon);
+}
+
+function commitPin(lat, lon) {
+    const label = `Pin: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    state.location = {
+        mode: 'pin',
+        label,
+        points: [{ latitude: lat, longitude: lon }],
+        bbox: null,
+        gridSize: 1,
+        timezone: null,
+    };
+    state.selectedCity = {
+        name: `Pin (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+        latitude: lat,
+        longitude: lon,
+    };
+    state.locationMode = 'map';
+    if (els.selectedLocation) {
+        els.selectedLocation.innerHTML =
+            `Terpilih: <strong>${escapeHtml(label)}</strong> ` +
+            `<span class="muted">(geser marker untuk update; klik di peta untuk pindah)</span>`;
+    }
+}
+
+function setArea(west, south, east, north) {
+    if (!state.map || typeof L === 'undefined') return;
+    if (state.mapLayers.pin) {
+        state.map.removeLayer(state.mapLayers.pin);
+        state.mapLayers.pin = null;
+    }
+    if (state.mapLayers.areaRect) {
+        state.map.removeLayer(state.mapLayers.areaRect);
+    }
+    if (state.mapLayers.gridPoints) {
+        state.map.removeLayer(state.mapLayers.gridPoints);
+    }
+    if (state.mapLayers.draw) state.mapLayers.draw.clearLayers();
+
+    // Auto pick grid resolution from bbox span. Larger areas → 5×5 to
+    // sample more grid cells; small ones → 3×3 to stay light.
+    const span = Math.max(Math.abs(east - west), Math.abs(north - south));
+    const gridSize = span >= 1.0 ? 5 : 3;
+
+    const points = [];
+    // Sample the *interior* of the rectangle (skip the edges) so all
+    // points fall inside the user's drawn area.
+    for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+            const fx = (i + 1) / (gridSize + 1);
+            const fy = (j + 1) / (gridSize + 1);
+            const lon = west + fx * (east - west);
+            const lat = south + fy * (north - south);
+            points.push({
+                latitude: Number(lat.toFixed(4)),
+                longitude: Number(lon.toFixed(4)),
+            });
+        }
+    }
+
+    const rect = L.rectangle(
+        [
+            [south, west],
+            [north, east],
+        ],
+        {
+            color: '#2563eb',
+            weight: 2,
+            fillOpacity: 0.08,
+        }
+    ).addTo(state.map);
+    state.mapLayers.areaRect = rect;
+
+    const dotLayer = L.layerGroup().addTo(state.map);
+    points.forEach((p, i) => {
+        L.circleMarker([p.latitude, p.longitude], {
+            radius: 4,
+            color: '#2563eb',
+            weight: 1,
+            fillColor: '#2563eb',
+            fillOpacity: 0.6,
+        })
+            .addTo(dotLayer)
+            .bindTooltip(
+                `Titik #${i + 1}: ${p.latitude.toFixed(3)}, ${p.longitude.toFixed(3)}`
+            );
+    });
+    state.mapLayers.gridPoints = dotLayer;
+
+    const fmt = (v) => Number(v).toFixed(3);
+    const label =
+        `Area ${fmt(south)}–${fmt(north)} LU/LS, ${fmt(west)}–${fmt(east)} BB/BT ` +
+        `(grid ${gridSize}×${gridSize}, ${points.length} titik)`;
+
+    state.location = {
+        mode: 'area',
+        label,
+        points,
+        bbox: [west, south, east, north],
+        gridSize,
+        timezone: null,
+    };
+    state.selectedCity = {
+        name: `Area ${gridSize}x${gridSize}`,
+        latitude: points[0].latitude,
+        longitude: points[0].longitude,
+    };
+    state.locationMode = 'map';
+    if (els.selectedLocation) {
+        els.selectedLocation.innerHTML =
+            `Terpilih: <strong>${escapeHtml(label)}</strong>`;
+    }
+}
+
 // ----- Submit -----
 
 async function handleSubmit({ download }) {
@@ -667,20 +985,24 @@ async function handleSubmit({ download }) {
                 endDate,
             });
         } else if (state.source === "power") {
-            if (!state.selectedCity) {
-                throw new Error("Pilih kota dulu dari saran pencarian (POWER butuh lat/lon).");
+            if (!state.location) {
+                throw new Error(
+                    "Pilih lokasi dulu (cari kota atau klik di peta) — POWER butuh lat/lon."
+                );
             }
             result = await fetchPower({
-                city: state.selectedCity,
+                location: state.location,
                 startDate,
                 endDate,
             });
         } else {
-            if (!state.selectedCity) {
-                throw new Error("Pilih kota dulu dari saran pencarian.");
+            if (!state.location) {
+                throw new Error(
+                    "Pilih lokasi dulu (cari kota atau klik di peta)."
+                );
             }
             result = await fetchOpenMeteo({
-                city: state.selectedCity,
+                location: state.location,
                 startDate,
                 endDate,
                 timezone: els.timezone.value,
@@ -727,7 +1049,7 @@ function showStatus(msg, type = "info") {
 
 // ----- Open-Meteo fetch -----
 
-async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
+async function fetchOpenMeteo({ location, startDate, endDate, timezone }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const archiveCutoff = new Date(today);
@@ -748,55 +1070,64 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
         segments.push({ kind: "forecast", start: archiveCutoff, end });
     }
 
-    // Accumulate hourly samples keyed by local-date (YYYY-MM-DD).
+    // Accumulate hourly samples keyed by local-date (YYYY-MM-DD). For area
+    // mode we fetch each grid point and pour all hourly samples into the
+    // same per-day buckets — the daily mean across N points × 24 h ≈
+    // spatial+temporal mean for the day.
     const groups = {};
+    const points = location.points;
 
-    for (const seg of segments) {
-        const data = await callOpenMeteo({
-            kind: seg.kind,
-            latitude: city.latitude,
-            longitude: city.longitude,
-            startDate: isoDate(seg.start),
-            endDate: isoDate(seg.end),
-            timezone,
-        });
-        const block = data.hourly;
-        if (!block || !block.time) continue;
-        block.time.forEach((t, i) => {
-            const date = String(t).slice(0, 10);
-            if (!groups[date]) {
-                groups[date] = {
-                    temps: [],
-                    precips: [],
-                    speeds: [],
-                    sins: [],
-                    coses: [],
-                    sunshineSec: [],
-                };
-            }
-            const g = groups[date];
-            const tmp = block.temperature_2m?.[i];
-            const pr = block.precipitation?.[i];
-            const sp = block.wind_speed_10m?.[i];
-            const dr = block.wind_direction_10m?.[i];
-            const sn = block.sunshine_duration?.[i];
-            if (tmp != null) g.temps.push(tmp);
-            if (pr != null) g.precips.push(pr);
-            if (sp != null) g.speeds.push(sp);
-            if (sp != null && dr != null) {
-                // Speed-weighted vector mean for wind direction so the
-                // "dominant" direction reflects when wind was actually blowing
-                // hard, not calm-noise samples near 0 m/s.
-                const rad = (dr * Math.PI) / 180;
-                g.sins.push(Math.sin(rad) * sp);
-                g.coses.push(Math.cos(rad) * sp);
-            }
-            if (sn != null) g.sunshineSec.push(sn);
-        });
+    for (let pi = 0; pi < points.length; pi++) {
+        const pt = points[pi];
+        for (const seg of segments) {
+            const data = await callOpenMeteo({
+                kind: seg.kind,
+                latitude: pt.latitude,
+                longitude: pt.longitude,
+                startDate: isoDate(seg.start),
+                endDate: isoDate(seg.end),
+                timezone,
+            });
+            const block = data.hourly;
+            if (!block || !block.time) continue;
+            block.time.forEach((t, i) => {
+                const date = String(t).slice(0, 10);
+                if (!groups[date]) {
+                    groups[date] = {
+                        temps: [],
+                        precips: [],
+                        speeds: [],
+                        sins: [],
+                        coses: [],
+                        sunshineSec: [],
+                    };
+                }
+                const g = groups[date];
+                const tmp = block.temperature_2m?.[i];
+                const pr = block.precipitation?.[i];
+                const sp = block.wind_speed_10m?.[i];
+                const dr = block.wind_direction_10m?.[i];
+                const sn = block.sunshine_duration?.[i];
+                if (tmp != null) g.temps.push(tmp);
+                if (pr != null) g.precips.push(pr);
+                if (sp != null) g.speeds.push(sp);
+                if (sp != null && dr != null) {
+                    // Speed-weighted vector mean for wind direction so the
+                    // "dominant" direction reflects when wind was actually
+                    // blowing hard, not calm-noise samples near 0 m/s.
+                    const rad = (dr * Math.PI) / 180;
+                    g.sins.push(Math.sin(rad) * sp);
+                    g.coses.push(Math.cos(rad) * sp);
+                }
+                if (sn != null) g.sunshineSec.push(sn);
+            });
+        }
     }
 
     const dates = Object.keys(groups).sort();
-    const aggregated = dates.map((d) => aggregateOpenMeteoDay(d, groups[d]));
+    const aggregated = dates.map((d) =>
+        aggregateOpenMeteoDay(d, groups[d], points.length)
+    );
 
     const headers = [
         "Tanggal",
@@ -823,7 +1154,8 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
         windRows,
         meta: {
             kind: "openmeteo",
-            city,
+            city: location.points[0], // backward compat for filename/UI helpers
+            location,
             startDate,
             endDate,
             granularity: "daily",
@@ -833,10 +1165,14 @@ async function fetchOpenMeteo({ city, startDate, endDate, timezone }) {
     };
 }
 
-function aggregateOpenMeteoDay(date, g) {
+function aggregateOpenMeteoDay(date, g, nPoints = 1) {
     const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
     const mean = (a) => (a.length ? sum(a) / a.length : null);
     const round = (v, n) => (v == null ? null : Number(v.toFixed(n)));
+    // For multi-point (area) mode, hourly samples are pooled across N grid
+    // points, so a naive sum() over the day's bucket double-counts by N.
+    // Divide totals by N to recover the spatial mean of the daily total.
+    const np = Math.max(1, nPoints);
 
     let dirMean = null;
     if (g.sins.length) {
@@ -846,15 +1182,19 @@ function aggregateOpenMeteoDay(date, g) {
             dirMean = ((Math.atan2(sx, cx) * 180) / Math.PI + 360) % 360;
         }
     }
+    const precipTotal = sum(g.precips);
+    const sunshineSecTotal = sum(g.sunshineSec);
     return {
         date,
         temperature_2m_mean: round(mean(g.temps), 2),
-        precipitation_sum: round(sum(g.precips), 2),
+        precipitation_sum:
+            precipTotal == null ? null : round(precipTotal / np, 2),
         wind_speed_10m_mean: round(mean(g.speeds), 2),
         wind_direction_10m_dominant: dirMean == null ? null : Math.round(dirMean),
-        sunshine_duration_h: g.sunshineSec.length
-            ? round(sum(g.sunshineSec) / 3600, 2)
-            : null,
+        sunshine_duration_h:
+            sunshineSecTotal == null
+                ? null
+                : round(sunshineSecTotal / np / 3600, 2),
     };
 }
 
@@ -900,62 +1240,122 @@ async function callOpenMeteo({
 
 // ----- NASA POWER fetch -----
 
-async function fetchPower({ city, startDate, endDate }) {
+async function fetchPower({ location, startDate, endDate }) {
     // POWER daily endpoint expects YYYYMMDD strings; no time-standard.
     const compact = (s) => s.replace(/-/g, "");
-    const params = new URLSearchParams({
-        parameters: POWER_PARAMS.map((p) => p.key).join(","),
-        community: "RE",
-        longitude: String(city.longitude),
-        latitude: String(city.latitude),
-        start: compact(startDate),
-        end: compact(endDate),
-        format: "JSON",
-    });
-    const url = `${POWER_URL}?${params.toString()}`;
-    const res = await apiFetch(url);
-    if (!res.ok) {
-        const text = await res.text();
-        let detail = text;
-        try {
-            const j = JSON.parse(text);
-            detail = j.message || JSON.stringify(j.messages || j);
-        } catch (_) {
-            // detail stays as raw text
-        }
-        throw new Error(`NASA POWER HTTP ${res.status}: ${detail}`);
-    }
-    const data = await res.json();
-    const param = data.properties && data.properties.parameter;
-    if (!param) throw new Error("Respons NASA POWER tidak punya properties.parameter.");
+    const points = location.points;
 
-    // Build sorted list of timestamps from the union of all parameter keys.
-    const tset = new Set();
-    for (const k of Object.keys(param)) {
-        for (const t of Object.keys(param[k])) tset.add(t);
+    // Per-day buckets across N grid points. For each timestamp we accumulate
+    // the value at every point; later we average (or vector-mean for wind).
+    // Speed-weighted vector mean for wind direction so the dominant
+    // direction across the area reflects when the wind was actually blowing.
+    const buckets = {};
+    let elev = null;
+    let apiVersion = null;
+    let sources = [];
+
+    for (const pt of points) {
+        const params = new URLSearchParams({
+            parameters: POWER_PARAMS.map((p) => p.key).join(","),
+            community: "RE",
+            longitude: String(pt.longitude),
+            latitude: String(pt.latitude),
+            start: compact(startDate),
+            end: compact(endDate),
+            format: "JSON",
+        });
+        const url = `${POWER_URL}?${params.toString()}`;
+        const res = await apiFetch(url);
+        if (!res.ok) {
+            const text = await res.text();
+            let detail = text;
+            try {
+                const j = JSON.parse(text);
+                detail = j.message || JSON.stringify(j.messages || j);
+            } catch (_) {
+                // detail stays as raw text
+            }
+            throw new Error(`NASA POWER HTTP ${res.status}: ${detail}`);
+        }
+        const data = await res.json();
+        const param = data.properties && data.properties.parameter;
+        if (!param) {
+            throw new Error("Respons NASA POWER tidak punya properties.parameter.");
+        }
+
+        if (apiVersion == null) {
+            apiVersion = data.header && data.header.api && data.header.api.version;
+            sources = (data.header && data.header.sources) || [];
+            elev =
+                data.geometry &&
+                data.geometry.coordinates &&
+                data.geometry.coordinates[2];
+        }
+
+        const tset = new Set();
+        for (const k of Object.keys(param)) {
+            for (const t of Object.keys(param[k])) tset.add(t);
+        }
+        for (const t of tset) {
+            if (!buckets[t]) {
+                buckets[t] = {
+                    T2M: [],
+                    PRECTOTCORR: [],
+                    WS10M: [],
+                    GHI: [],
+                    sins: [],
+                    coses: [],
+                };
+            }
+            const b = buckets[t];
+            const tmp = clean(param.T2M?.[t]);
+            const pr = clean(param.PRECTOTCORR?.[t]);
+            const sp = clean(param.WS10M?.[t]);
+            const dr = clean(param.WD10M?.[t]);
+            const ghi = clean(param.ALLSKY_SFC_SW_DWN?.[t]);
+            if (tmp != null) b.T2M.push(tmp);
+            if (pr != null) b.PRECTOTCORR.push(pr);
+            if (sp != null) b.WS10M.push(sp);
+            if (sp != null && dr != null) {
+                const rad = (dr * Math.PI) / 180;
+                b.sins.push(Math.sin(rad) * sp);
+                b.coses.push(Math.cos(rad) * sp);
+            }
+            if (ghi != null) b.GHI.push(ghi);
+        }
     }
-    const times = Array.from(tset).sort();
+
+    const times = Object.keys(buckets).sort();
+    const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
+    const mean = (a) => (a.length ? sum(a) / a.length : null);
+    const round = (v, n) => (v == null ? null : Number(v.toFixed(n)));
 
     const headers = [
         "Tanggal (UTC)",
         ...POWER_PARAMS.map((p) => `${p.label} (${p.unit})`),
     ];
-    const rows = times.map((t) => {
-        const iso = powerDailyKeyToIso(t);
-        return [iso, ...POWER_PARAMS.map((p) => clean(param[p.key]?.[t]))];
-    });
-
+    const rows = [];
     const windRows = [];
     for (const t of times) {
-        const d = clean(param.WD10M?.[t]);
-        const sMs = clean(param.WS10M?.[t]);
-        if (d != null && sMs != null) {
-            windRows.push({ dir: d, spd: sMs });
+        const b = buckets[t];
+        const iso = powerDailyKeyToIso(t);
+        let dirMean = null;
+        if (b.sins.length) {
+            const sx = sum(b.sins);
+            const cx = sum(b.coses);
+            if (sx != null && cx != null && (sx !== 0 || cx !== 0)) {
+                dirMean =
+                    ((Math.atan2(sx, cx) * 180) / Math.PI + 360) % 360;
+            }
         }
+        const tmp = round(mean(b.T2M), 2);
+        const pr = round(mean(b.PRECTOTCORR), 2);
+        const sp = round(mean(b.WS10M), 2);
+        const drRound = dirMean == null ? null : Math.round(dirMean);
+        const gh = round(mean(b.GHI), 2);
+        rows.push([iso, tmp, pr, sp, drRound, gh]);
+        if (drRound != null && sp != null) windRows.push({ dir: drRound, spd: sp });
     }
-
-    const elev =
-        data.geometry && data.geometry.coordinates && data.geometry.coordinates[2];
 
     return {
         source: "power",
@@ -964,13 +1364,14 @@ async function fetchPower({ city, startDate, endDate }) {
         windRows,
         meta: {
             kind: "power",
-            city,
+            city: location.points[0], // backward compat for filename/UI helpers
+            location,
             startDate,
             endDate,
             granularity: "daily",
             elevation: elev,
-            sources: (data.header && data.header.sources) || [],
-            apiVersion: data.header && data.header.api && data.header.api.version,
+            sources,
+            apiVersion,
             timeStandard: "UTC",
         },
     };
@@ -1195,12 +1596,11 @@ function renderPreview(result) {
 
 function describeResult(result) {
     if (result.source === "power") {
+        const loc = result.meta.location;
         const c = result.meta.city;
-        const parts = [c.name];
-        if (c.admin1) parts.push(c.admin1);
-        if (c.country) parts.push(c.country);
+        const locDesc = locationDescription(loc, c);
         return (
-            `Lokasi: ${parts.join(", ")} (${c.latitude.toFixed(3)}, ${c.longitude.toFixed(3)})` +
+            `${locDesc}` +
             ` · Periode: ${result.meta.startDate} → ${result.meta.endDate} (UTC)` +
             ` · Sumber: NASA POWER (${(result.meta.sources || []).join(", ") || "MERRA-2"})` +
             ` · Total baris: ${result.rows.length}`
@@ -1223,14 +1623,37 @@ function describeResult(result) {
         );
     }
     const c = result.meta.city;
-    const parts = [c.name];
-    if (c.admin1) parts.push(c.admin1);
-    if (c.country) parts.push(c.country);
+    const loc = result.meta.location;
+    const locDesc = locationDescription(loc, c);
     return (
-        `Kota: ${parts.join(", ")} · Periode: ${result.meta.startDate} → ${result.meta.endDate}` +
+        `${locDesc} · Periode: ${result.meta.startDate} → ${result.meta.endDate}` +
         ` · Granularitas: ${result.meta.granularity} · Sumber: ${result.meta.sources.join(" + ")}` +
         ` · Total baris: ${result.rows.length}`
     );
+}
+
+function locationDescription(loc, fallbackCity) {
+    const c = fallbackCity || (loc && loc.points && loc.points[0]) || {};
+    const parts = [];
+    if (c.name) parts.push(c.name);
+    if (c.admin1) parts.push(c.admin1);
+    if (c.country) parts.push(c.country);
+    if (loc && loc.mode === "area") {
+        const bb = loc.bbox || [];
+        const fmt = (v) => Number(v).toFixed(3);
+        return (
+            `Area: ${loc.gridSize}×${loc.gridSize} grid (${loc.points.length} titik)` +
+            (bb.length === 4
+                ? `, bbox W=${fmt(bb[0])} S=${fmt(bb[1])} E=${fmt(bb[2])} N=${fmt(bb[3])}`
+                : "")
+        );
+    }
+    if (loc && loc.mode === "pin") {
+        return (
+            `Pin di peta (${c.latitude?.toFixed(3) ?? "?"}, ${c.longitude?.toFixed(3) ?? "?"})`
+        );
+    }
+    return `Lokasi: ${parts.join(", ")} (${c.latitude?.toFixed(3) ?? "?"}, ${c.longitude?.toFixed(3) ?? "?"})`;
 }
 
 // ----- Excel export -----
@@ -1258,6 +1681,70 @@ function exportXlsx(result) {
     XLSX.writeFile(wb, filename);
 }
 
+// Render the location rows for the Excel Info sheet. Always includes the
+// underlying lat/lon used for the *first* point so prior columns keep working,
+// but for pin/area mode also exposes how many points were averaged and the
+// bounding box (when applicable).
+function locationRows(loc, fallbackCity) {
+    const c = fallbackCity || (loc && loc.points && loc.points[0]) || {};
+    const cityParts = [];
+    if (c.name) cityParts.push(c.name);
+    if (c.admin1) cityParts.push(c.admin1);
+    if (c.country) cityParts.push(c.country);
+    const cityLabel = cityParts.length ? cityParts.join(", ") : "";
+
+    if (!loc) {
+        return [
+            ["Lokasi", cityLabel],
+            ["Latitude", c.latitude ?? ""],
+            ["Longitude", c.longitude ?? ""],
+        ];
+    }
+
+    if (loc.mode === "city") {
+        return [
+            ["Lokasi", cityLabel || loc.label || ""],
+            ["Mode lokasi", "Kota (1 titik)"],
+            ["Latitude", c.latitude ?? ""],
+            ["Longitude", c.longitude ?? ""],
+        ];
+    }
+    if (loc.mode === "pin") {
+        return [
+            ["Lokasi", loc.label || ""],
+            ["Mode lokasi", "Pin tunggal di peta (1 titik)"],
+            ["Latitude", c.latitude ?? ""],
+            ["Longitude", c.longitude ?? ""],
+        ];
+    }
+    if (loc.mode === "area") {
+        const bb = loc.bbox || [];
+        const fmt = (v) => (v == null ? "" : Number(v).toFixed(4));
+        return [
+            ["Lokasi", loc.label || "Area peta"],
+            [
+                "Mode lokasi",
+                `Area peta (grid ${loc.gridSize}×${loc.gridSize} = ${loc.points.length} titik dirata-rata)`,
+            ],
+            ["Bounding box (W, S, E, N)", bb.length === 4 ? bb.map(fmt).join(", ") : ""],
+            [
+                "Titik grid",
+                loc.points
+                    .map(
+                        (p, i) =>
+                            `#${i + 1} (${fmt(p.latitude)}, ${fmt(p.longitude)})`
+                    )
+                    .join("; "),
+            ],
+        ];
+    }
+    return [
+        ["Lokasi", cityLabel || ""],
+        ["Latitude", c.latitude ?? ""],
+        ["Longitude", c.longitude ?? ""],
+    ];
+}
+
 function buildMetaRows(result) {
     const variableList = [
         "1. Suhu rata-rata (°C)",
@@ -1268,19 +1755,16 @@ function buildMetaRows(result) {
     ].join(" | ");
 
     if (result.source === "power") {
+        const loc = result.meta.location;
         const c = result.meta.city;
-        const cityParts = [c.name];
-        if (c.admin1) cityParts.push(c.admin1);
-        if (c.country) cityParts.push(c.country);
+        const locRows = locationRows(loc, c);
         return [
             ["Field", "Value"],
             ["Sumber", "NASA POWER (power.larc.nasa.gov, MERRA-2 + CERES SYN1deg)"],
             ["API version", result.meta.apiVersion || ""],
             ["Sumber asal", (result.meta.sources || []).join(", ")],
             ["Community", "RE (Renewable Energy)"],
-            ["Lokasi", cityParts.join(", ")],
-            ["Latitude", c.latitude],
-            ["Longitude", c.longitude],
+            ...locRows,
             ["Elevasi grid (m)", result.meta.elevation ?? ""],
             ["Tanggal mulai", result.meta.startDate],
             ["Tanggal akhir", result.meta.endDate],
@@ -1339,15 +1823,12 @@ function buildMetaRows(result) {
         ];
     }
     const c = result.meta.city;
-    const cityParts = [c.name];
-    if (c.admin1) cityParts.push(c.admin1);
-    if (c.country) cityParts.push(c.country);
+    const loc = result.meta.location;
+    const locRows = locationRows(loc, c);
     return [
         ["Field", "Value"],
         ["Sumber", "Open-Meteo (open-meteo.com)"],
-        ["Kota", cityParts.join(", ")],
-        ["Latitude", c.latitude],
-        ["Longitude", c.longitude],
+        ...locRows,
         ["Zona waktu (kota)", c.timezone || ""],
         ["Zona waktu (request)", result.meta.timezone],
         ["Tanggal mulai", result.meta.startDate],
@@ -1374,10 +1855,21 @@ function buildFilename(result) {
         const s = result.meta.station;
         return `weather_meteostat_${safe(s.wmo || s.id)}_${start}_to_${end}.xlsx`;
     }
-    if (result.source === "power") {
-        return `weather_power_${safe(result.meta.city.name)}_${start}_to_${end}.xlsx`;
+    const loc = result.meta.location;
+    let label = result.meta.city?.name || "lokasi";
+    if (loc) {
+        if (loc.mode === "area") label = `area_${loc.gridSize}x${loc.gridSize}`;
+        else if (loc.mode === "pin") {
+            const p = loc.points[0];
+            label = `pin_${p.latitude.toFixed(2)}_${p.longitude.toFixed(2)}`;
+        } else if (loc.points && loc.points[0] && loc.points[0].name) {
+            label = loc.points[0].name;
+        }
     }
-    return `weather_${safe(result.meta.city.name)}_${start}_to_${end}_daily.xlsx`;
+    if (result.source === "power") {
+        return `weather_power_${safe(label)}_${start}_to_${end}.xlsx`;
+    }
+    return `weather_${safe(label)}_${start}_to_${end}_daily.xlsx`;
 }
 
 // ----- Windrose -----
