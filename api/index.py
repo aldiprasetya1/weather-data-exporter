@@ -1,22 +1,41 @@
-"""Vercel serverless entrypoint for the FastAPI backend.
-
-The actual application code lives under ``backend/app``. This file just
-adjusts ``sys.path`` so the package can be imported, then re-exports
-``app`` so Vercel's Python runtime auto-detects it as an ASGI app.
-
-We rely on a ``vercel.json`` rewrite block that funnels every backend
-URL (e.g. ``/api/auth/login``, ``/healthz``, ``/stations``) to this
-function while preserving the original request path, so FastAPI's
-router matches without any prefix translation.
-"""
-
+"""Probe entrypoint — debug Vercel bundle layout."""
 from __future__ import annotations
-
-import sys
+import os, sys
 from pathlib import Path
+import json
 
-_BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
+_HERE = Path(__file__).resolve().parent
+_ROOT = _HERE.parent
+_BACKEND = _ROOT / "backend"
 
-from app.main import app  # noqa: E402,F401  (re-export for Vercel)
+# Try import
+import_err = None
+try:
+    sys.path.insert(0, str(_BACKEND))
+    from app.main import app as fastapi_app  # type: ignore
+except Exception as exc:  # noqa: BLE001
+    import_err = repr(exc)
+
+# Build a probe response (any URL hits this)
+from fastapi import FastAPI
+
+probe = FastAPI()
+
+@probe.get("/{path:path}")
+def any_get(path: str):
+    return {
+        "ok": True,
+        "url_path": path,
+        "here": str(_HERE),
+        "root": str(_ROOT),
+        "backend_exists": _BACKEND.exists(),
+        "backend_listing": sorted([p.name for p in _BACKEND.glob("**/*") if p.is_file()]) if _BACKEND.exists() else None,
+        "import_err": import_err,
+        "imported_app": import_err is None,
+        "env_TURSO_URL_present": bool(os.environ.get("TURSO_DATABASE_URL")),
+        "env_TURSO_AUTH_present": bool(os.environ.get("TURSO_AUTH_TOKEN")),
+        "env_ADMIN_SECRET_present": bool(os.environ.get("ADMIN_SECRET")),
+    }
+
+# Try to use the real app if import succeeded; else use probe
+app = fastapi_app if import_err is None else probe
