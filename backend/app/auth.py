@@ -1,14 +1,24 @@
-"""Bearer-token authentication backed by a SQLite database.
+"""Bearer-token authentication backed by SQLite.
 
-The database lives at $WDE_DB_PATH (default /data/tokens.sqlite) so it can
-be persisted on a Fly.io volume. Tokens are random opaque strings issued
-by an admin via the admin endpoints (see app.admin) and validated on
-every protected request via the `require_token` FastAPI dependency.
+Two storage backends are supported and selected at runtime:
+
+* **Turso (libSQL) remote** — active when ``TURSO_DATABASE_URL`` and
+  ``TURSO_AUTH_TOKEN`` are set. Each query is issued over HTTPS to a
+  managed libSQL database in the cloud, so token data persists across
+  ephemeral container restarts (Render free tier, etc.).
+* **Local SQLite file** — fallback when the Turso env vars are absent.
+  The DB lives at ``$WDE_DB_PATH`` (default ``/data/tokens.sqlite``)
+  which still works for VMs with a persistent volume (e.g. Fly.io).
+
+Tokens are random opaque strings issued by an admin via the admin
+endpoints (see app.admin) and validated on every protected request
+via the `require_token` FastAPI dependency.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -16,13 +26,25 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from fastapi import Depends, Header, HTTPException, status
 
+try:  # libsql is optional; we fall back to local sqlite when absent.
+    import libsql  # type: ignore
+except ImportError:  # pragma: no cover - exercised only when the package is missing
+    libsql = None  # type: ignore
+
 DB_PATH = Path(os.environ.get("WDE_DB_PATH", "/data/tokens.sqlite"))
+TURSO_URL = os.environ.get("TURSO_DATABASE_URL", "").strip()
+TURSO_AUTH = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
+USE_TURSO = bool(TURSO_URL and TURSO_AUTH and libsql is not None)
+
 TOKEN_PREFIX = "wde_"
 ALLOWED_DAYS = (1, 7, 30)
+
+# Custom (admin-supplied) tokens: 6–64 chars from [A-Za-z0-9_-].
+CUSTOM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 
 _lock = threading.Lock()
 _admin_secret_cache: str | None = None
@@ -32,10 +54,13 @@ def _ensure_dir() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _connect() -> sqlite3.Connection:
+def _connect() -> Any:
+    if USE_TURSO:
+        # libsql.connect returns a sqlite3-like Connection that proxies to
+        # the Turso/libSQL HTTPS endpoint.
+        return libsql.connect(database=TURSO_URL, auth_token=TURSO_AUTH)
     _ensure_dir()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -43,7 +68,7 @@ def _connect() -> sqlite3.Connection:
 
 def init_db() -> None:
     """Create the tokens table on first run. Safe to call repeatedly."""
-    with _lock, _connect() as conn:
+    with db_conn() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS tokens (
@@ -59,9 +84,17 @@ def init_db() -> None:
 
 
 @contextmanager
-def db_conn() -> Iterator[sqlite3.Connection]:
-    with _lock, _connect() as conn:
-        yield conn
+def db_conn() -> Iterator[Any]:
+    """Yield a DB connection (libsql or sqlite3) under the global lock."""
+    with _lock:
+        conn = _connect()
+        try:
+            yield conn
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @dataclass
@@ -73,13 +106,16 @@ class TokenRecord:
     revoked: bool
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "TokenRecord":
+    def from_row(cls, row: Any) -> "TokenRecord":
+        # Both sqlite3 (with default row_factory) and libsql return tuples
+        # in column order. SELECTs in this module always project the same
+        # five columns in the same order, so positional access is safe.
         return cls(
-            token=row["token"],
-            label=row["label"],
-            created_at=row["created_at"],
-            expires_at=row["expires_at"],
-            revoked=bool(row["revoked"]),
+            token=row[0],
+            label=row[1],
+            created_at=row[2],
+            expires_at=row[3],
+            revoked=bool(row[4]),
         )
 
     def is_expired(self, now: datetime | None = None) -> bool:
@@ -107,15 +143,25 @@ class TokenRecord:
         return d
 
 
-def create_token(label: str, days: int) -> TokenRecord:
+def create_token(label: str, days: int, custom_token: str | None = None) -> TokenRecord:
     if days not in ALLOWED_DAYS:
         raise ValueError(f"days must be one of {ALLOWED_DAYS}")
     label = (label or "").strip()
     if not label:
         raise ValueError("label is required")
+
+    if custom_token is not None:
+        custom_token = custom_token.strip()
+        if not CUSTOM_TOKEN_RE.match(custom_token):
+            raise ValueError(
+                "Custom token must be 6–64 characters of letters, digits, '-' or '_'"
+            )
+        token = custom_token
+    else:
+        token = TOKEN_PREFIX + secrets.token_urlsafe(24)
+
     now = datetime.now(timezone.utc)
     expires = now + timedelta(days=days)
-    token = TOKEN_PREFIX + secrets.token_urlsafe(24)
     rec = TokenRecord(
         token=token,
         label=label,
@@ -124,12 +170,28 @@ def create_token(label: str, days: int) -> TokenRecord:
         revoked=False,
     )
     with db_conn() as conn:
-        conn.execute(
-            "INSERT INTO tokens(token, label, created_at, expires_at, revoked)"
-            " VALUES (?, ?, ?, ?, 0)",
-            (rec.token, rec.label, rec.created_at, rec.expires_at),
+        # libsql doesn't expose IntegrityError consistently, so do an
+        # explicit existence check first. The race window is acceptable
+        # because token creation is admin-only.
+        cur = conn.execute(
+            "SELECT 1 FROM tokens WHERE token = ?", (rec.token,)
         )
-        conn.commit()
+        if cur.fetchone() is not None:
+            raise ValueError("Token already exists; pick a different value")
+        try:
+            conn.execute(
+                "INSERT INTO tokens(token, label, created_at, expires_at, revoked)"
+                " VALUES (?, ?, ?, ?, 0)",
+                (rec.token, rec.label, rec.created_at, rec.expires_at),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("Token already exists; pick a different value") from exc
+        except Exception as exc:  # libsql-specific errors land here
+            msg = str(exc).lower()
+            if "unique" in msg or "primary key" in msg:
+                raise ValueError("Token already exists; pick a different value") from exc
+            raise
     return rec
 
 

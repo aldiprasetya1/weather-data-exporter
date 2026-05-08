@@ -25,12 +25,21 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 def admin_create_token(payload: dict) -> dict:
     label = payload.get("label", "")
     days = payload.get("days")
+    raw_custom = payload.get("token")
+    custom_token: str | None
+    if raw_custom is None:
+        custom_token = None
+    elif isinstance(raw_custom, str):
+        cleaned = raw_custom.strip()
+        custom_token = cleaned if cleaned else None
+    else:
+        raise HTTPException(status_code=400, detail="`token` must be a string")
     try:
         days_int = int(days)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="`days` must be an integer") from exc
     try:
-        rec = auth.create_token(label=label, days=days_int)
+        rec = auth.create_token(label=label, days=days_int, custom_token=custom_token)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return rec.to_admin()
@@ -68,6 +77,11 @@ def _main(argv: list[str]) -> int:
         choices=auth.ALLOWED_DAYS,
         help="Token validity in days",
     )
+    p_create.add_argument(
+        "--token",
+        default=None,
+        help="Optional custom token string (6-64 chars: letters/digits/-/_)",
+    )
 
     sub.add_parser("list-tokens", help="List all tokens")
 
@@ -79,7 +93,9 @@ def _main(argv: list[str]) -> int:
     auth.init_db()
 
     if args.cmd == "create-token":
-        rec = auth.create_token(label=args.label, days=args.days)
+        rec = auth.create_token(
+            label=args.label, days=args.days, custom_token=args.token
+        )
         print(rec.token)
         print(f"label:      {rec.label}")
         print(f"created_at: {rec.created_at}")

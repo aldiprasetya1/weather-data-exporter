@@ -262,15 +262,26 @@ async function adminFetch(path, opts = {}) {
 async function handleAdminCreate() {
     const label = (document.getElementById("admin-new-label").value || "").trim();
     const days = parseInt(document.getElementById("admin-new-days").value, 10);
+    const customEl = document.getElementById("admin-new-token");
+    const custom = customEl ? (customEl.value || "").trim() : "";
     if (!label) {
         showAdminStatus("Label tidak boleh kosong.", "error");
         return;
     }
+    if (custom && !/^[A-Za-z0-9_-]{6,64}$/.test(custom)) {
+        showAdminStatus(
+            "Token kustom harus 6–64 karakter (huruf, angka, '-', '_').",
+            "error"
+        );
+        return;
+    }
     showAdminStatus("Membuat token...", "loading");
     try {
+        const body = { label, days };
+        if (custom) body.token = custom;
         const t = await adminFetch("/api/admin/tokens", {
             method: "POST",
-            body: JSON.stringify({ label, days }),
+            body: JSON.stringify(body),
         });
         const box = document.getElementById("admin-new-token-box");
         box.hidden = false;
@@ -281,6 +292,7 @@ async function handleAdminCreate() {
             `tidak akan ditampilkan ulang.</small>`;
         showAdminStatus(`Token untuk "${t.label}" berhasil dibuat.`, "success");
         document.getElementById("admin-new-label").value = "";
+        if (customEl) customEl.value = "";
         await handleAdminRefresh();
     } catch (err) {
         showAdminStatus(`Gagal: ${err.message}`, "error");

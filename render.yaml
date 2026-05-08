@@ -1,0 +1,31 @@
+# Render Blueprint: backend (FastAPI) for Angin Berhembus / weather-data-exporter
+#
+# After connecting this repo to Render and clicking "New > Blueprint",
+# Render will read this file and provision the service. You then need to
+# fill in three secret env vars in the Render dashboard:
+#   * ADMIN_SECRET            — a long random string for /api/admin/* auth
+#   * TURSO_DATABASE_URL      — libsql://<your-db>.turso.io
+#   * TURSO_AUTH_TOKEN        — Turso JWT auth token
+#
+# Storage: token data is persisted in Turso (libSQL Cloud), so the Render
+# Free Web Service tier is fine despite its ephemeral filesystem.
+
+services:
+  - type: web
+    name: angin-berhembus-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -e .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: ADMIN_SECRET
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
