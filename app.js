@@ -4,8 +4,14 @@
 // Excel. Every upstream call is proxied through the backend so a valid
 // Bearer token is required — see the login screen.
 
+// Use ?? (not ||) so an explicit empty string from config.js is honored.
+// Empty == same-origin (the backend is a Vercel Serverless Function in
+// this very deployment). Falls back to a localhost dev server only when
+// APP_CONFIG is missing entirely.
 const BACKEND_URL =
-    (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL) || "http://localhost:8001";
+    (window.APP_CONFIG && window.APP_CONFIG.BACKEND_URL !== undefined)
+        ? window.APP_CONFIG.BACKEND_URL
+        : "http://localhost:8001";
 
 // All three upstream sources go through the backend now; the token gate
 // is enforced server-side.
