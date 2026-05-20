@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Angin Berhembus</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="128x128" href="assets/favicon.png" />
+    <link rel="apple-touch-icon" href="assets/favicon.png" />
+    <!-- Leaflet (peta interaktif) + leaflet-draw (gambar kotak area) -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""
+    />
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
+    />
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""
+        defer
+    ></script>
+    <script
+        src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"
+        defer
+    ></script>
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <img src="assets/logo.png" alt="Logo Angin Berhembus" class="brand-logo" />
+            <div class="brand-text">
+                <h1>Angin Berhembus</h1>
+                <p class="subtitle">
+                    Website unduh data historis dan ekspor ke Excel dengan mudah dari tiga sumber:
+                    <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>,
+                    <a href="https://meteostat.net/" target="_blank" rel="noopener">Meteostat</a>, dan
+                    <a href="https://power.larc.nasa.gov/" target="_blank" rel="noopener">NASA POWER</a>.
+                </p>
+            </div>
+        </div>
+        <div id="auth-bar" class="auth-bar" hidden>
+            <span id="auth-label" class="muted"></span>
+            <button id="logout-btn" type="button" class="link-button">Logout</button>
+        </div>
+    </header>
+
+    <main id="login-view">
+        <section class="card login-card">
+            <h2>Masuk dengan Token</h2>
+            <p class="muted">
+                Aplikasi ini memerlukan token akses untuk dapat digunakan.
+                Hubungi admin Anda untuk mendapatkan token (durasi 1 hari /
+                7 hari / 30 hari).
+            </p>
+            <div class="field">
+                <label for="login-token">Token akses</label>
+                <input
+                    id="login-token"
+                    type="text"
+                    placeholder="wde_..."
+                    autocomplete="off"
+                    spellcheck="false"
+                />
+            </div>
+            <div id="login-status" class="status" hidden></div>
+            <div class="actions">
+                <button id="login-btn" type="button" class="primary">Masuk</button>
+            </div>
+        </section>
+    </main>
+
+    <main id="app-view" hidden>
+        <form id="weather-form">
+            <section class="card">
+                <h2>1. Sumber Data</h2>
+                <div class="radio-row">
+                    <label class="radio">
+                        <input type="radio" name="source" value="openmeteo" checked />
+                        <span>
+                            <strong>Open-Meteo (model global)</strong>
+                            <em class="muted">— grid reanalysis/forecast, kota mana saja di dunia</em>
+                        </span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="source" value="meteostat" />
+                        <span>
+                            <strong>Meteostat (stasiun observasi Indonesia)</strong>
+                            <em class="muted">— observasi historis dari stasiun ASOS/SYNOP BMKG (~129 stasiun)</em>
+                        </span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="source" value="power" />
+                        <span>
+                            <strong>NASA POWER (model + radiasi surya)</strong>
+                            <em class="muted">— MERRA-2 reanalysis, lengkap dengan GHI/DNI/DHI/PAR (untuk PV / pertanian)</em>
+                        </span>
+                    </label>
+                </div>
+            </section>
+
+            <section id="city-section" class="card">
+                <h2>2. Pilih Lokasi</h2>
+                <div class="tabs" role="tablist" aria-label="Cara pilih lokasi">
+                    <button
+                        type="button"
+                        class="tab active"
+                        role="tab"
+                        data-tab="city-name"
+                        aria-selected="true"
+                    >Cari Nama Kota</button>
+                    <button
+                        type="button"
+                        class="tab"
+                        role="tab"
+                        data-tab="city-map"
+                        aria-selected="false"
+                    >Pilih di Peta</button>
+                </div>
+
+                <div id="city-tab-name" class="tab-panel" role="tabpanel">
+                    <div class="field">
+                        <label for="city-input">Nama kota</label>
+                        <div class="autocomplete">
+                            <input
+                                id="city-input"
+                                type="text"
+                                placeholder="Contoh: Jakarta, Surabaya, Bandung..."
+                                autocomplete="off"
+                            />
+                            <ul id="city-suggestions" class="suggestions" hidden></ul>
+                        </div>
+                        <p id="selected-city" class="muted">Belum ada kota yang dipilih.</p>
+                    </div>
+                </div>
+
+                <div id="city-tab-map" class="tab-panel" role="tabpanel" hidden>
+                    <div class="map-controls">
+                        <div class="mode-toggle" role="radiogroup" aria-label="Mode peta">
+                            <label class="radio-inline">
+                                <input
+                                    type="radio"
+                                    name="map-mode"
+                                    value="pin"
+                                    checked
+                                />
+                                <span>📍 Pin tunggal</span>
+                            </label>
+                            <label class="radio-inline">
+                                <input
+                                    type="radio"
+                                    name="map-mode"
+                                    value="area"
+                                />
+                                <span>▢ Area (kotak → grid)</span>
+                            </label>
+                        </div>
+                        <button
+                            id="map-clear-btn"
+                            type="button"
+                            class="link-button"
+                        >Hapus pilihan</button>
+                    </div>
+                    <div id="map-canvas" class="map-canvas"></div>
+                    <p id="map-help" class="muted">
+                        <strong>Pin tunggal:</strong> klik di peta untuk taruh
+                        marker. Marker bisa digeser. <strong>Area:</strong>
+                        gambar kotak — sistem otomatis membentuk grid 3×3
+                        (kotak kecil &lt; 1°) atau 5×5 (lebih besar) lalu
+                        merata-ratakan data semua titik per hari.
+                    </p>
+                    <p id="selected-location" class="muted">Belum ada lokasi yang dipilih di peta.</p>
+                </div>
+            </section>
+
+            <section id="station-section" class="card" hidden>
+                <h2>2. Pilih Stasiun</h2>
+                <div class="field">
+                    <label for="station-search">Cari stasiun (nama / kota / kode WMO / ICAO)</label>
+                    <input
+                        id="station-search"
+                        type="text"
+                        placeholder="Contoh: Soekarno, Juanda, WIII, 96749..."
+                        autocomplete="off"
+                    />
+                </div>
+                <div class="field">
+                    <label for="station-select">Stasiun</label>
+                    <select id="station-select" size="8"></select>
+                    <p id="selected-station" class="muted">Belum ada stasiun yang dipilih.</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>3. Periode Waktu</h2>
+                <div class="row">
+                    <div class="field">
+                        <label for="start-date">Tanggal mulai</label>
+                        <input id="start-date" type="date" required />
+                    </div>
+                    <div class="field">
+                        <label for="end-date">Tanggal akhir</label>
+                        <input id="end-date" type="date" required />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="field">
+                        <label for="timezone">Zona waktu</label>
+                        <select id="timezone">
+                            <option value="auto" selected>Auto (sesuai lokasi kota)</option>
+                            <option value="Asia/Jakarta">Asia/Jakarta (WIB)</option>
+                            <option value="Asia/Makassar">Asia/Makassar (WITA)</option>
+                            <option value="Asia/Jayapura">Asia/Jayapura (WIT)</option>
+                            <option value="UTC">UTC</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="muted">
+                    Granularitas: <strong>per hari (daily)</strong>. Semua kecepatan angin
+                    di seluruh data dan windrose menggunakan satuan <strong>m/s</strong>.
+                </p>
+                <p class="muted" id="period-help-openmeteo">
+                    Sumber: ERA5 reanalysis (1940 – ~5 hari yang lalu) untuk historis,
+                    dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.
+                </p>
+                <p class="muted" id="period-help-meteostat" hidden>
+                    Sumber: observasi stasiun Meteostat (NOAA ISD/SYNOP), data harian.
+                    Maks 366 hari per request.
+                </p>
+                <p class="muted" id="period-help-power" hidden>
+                    Sumber: NASA POWER (MERRA-2 reanalysis + CERES/SYN1deg untuk radiasi),
+                    data harian. Tersedia 1981-01-01 → ~2 hari yang lalu. Maks 366 hari per request.
+                </p>
+            </section>
+
+            <section id="vars-section" class="card">
+                <h2>4. Variabel Cuaca</h2>
+                <p class="muted">
+                    Lima variabel harian yang diekspor (sama untuk semua sumber):
+                    <strong>suhu rata-rata (°C)</strong>,
+                    <strong>curah hujan / presipitasi (mm)</strong>,
+                    <strong>kecepatan angin rata-rata (m/s)</strong>,
+                    <strong>arah angin dominan (°)</strong>, dan
+                    <strong>lama penyinaran matahari (jam)</strong>.
+                </p>
+                <p class="muted" id="vars-help-openmeteo">
+                    Open-Meteo: data hourly diunduh lalu diagregasi ke harian di sisi
+                    klien — suhu &amp; angin pakai rata-rata, presipitasi pakai total,
+                    arah angin pakai speed-weighted vector mean, penyinaran pakai
+                    total detik ÷ 3600.
+                </p>
+                <p class="muted" id="vars-help-meteostat" hidden>
+                    Meteostat: kolom <code>tavg</code>, <code>prcp</code>,
+                    <code>wspd</code>, <code>wdir</code>, <code>tsun</code> (menit
+                    → dikonversi ke jam).
+                </p>
+                <p class="muted" id="vars-help-power" hidden>
+                    NASA POWER: <code>T2M</code>, <code>PRECTOTCORR</code>,
+                    <code>WS10M</code>, <code>WD10M</code>. NASA POWER tidak menyediakan
+                    kolom sunshine duration langsung — kolom &ldquo;Lama penyinaran&rdquo;
+                    diisi <strong>radiasi GHI all-sky (<code>ALLSKY_SFC_SW_DWN</code>,
+                    kWh/m²/hari)</strong> sebagai proxy energi penyinaran.
+                </p>
+            </section>
+
+            <div class="actions">
+                <button id="preview-btn" type="button">Pratinjau Data</button>
+                <button id="download-btn" type="submit" class="primary">⬇ Unduh Excel (.xlsx)</button>
+                <button id="windrose-btn" type="button">🌬️ Tampilkan Windrose</button>
+            </div>
+
+            <div id="status" class="status" hidden></div>
+        </form>
+
+        <section id="windrose-section" class="card" hidden>
+            <div class="windrose-header">
+                <h2>Windrose</h2>
+                <button id="windrose-download" type="button">⬇ Unduh PNG</button>
+            </div>
+            <div class="windrose-controls">
+                <span class="muted">Mode:</span>
+                <label class="radio inline">
+                    <input type="radio" name="windrose-mode" value="from" checked />
+                    <span><strong>Blowing FROM</strong> <em class="muted">— asal angin (konvensi meteorologi)</em></span>
+                </label>
+                <label class="radio inline">
+                    <input type="radio" name="windrose-mode" value="to" />
+                    <span><strong>Blowing TO</strong> <em class="muted">— arah hembusan</em></span>
+                </label>
+            </div>
+            <div id="windrose-info" class="muted"></div>
+            <div id="windrose-chart" class="windrose-chart"></div>
+        </section>
+
+        <section id="preview-section" class="card" hidden>
+            <h2>Pratinjau (50 baris pertama)</h2>
+            <div id="preview-info" class="muted"></div>
+            <div class="table-wrap">
+                <table id="preview-table"></table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>
+            Dibuat dengan
+            <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo API</a>
+            &amp;
+            <a href="https://sheetjs.com/" target="_blank" rel="noopener">SheetJS</a>.
+        </p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
