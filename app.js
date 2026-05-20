@@ -91,6 +91,7 @@ const state = {
     mapLayers: { pin: null, areaRect: null, gridPoints: null, draw: null },
     stations: [],
     lastResult: null, // {headers, rows, meta, windRows: [{dir, spd}]}
+    outputMode: "daily", // "daily" | "monthly"
     windroseMode: "from", // "from" (asal angin) | "to" (arah hembusan)
     auth: { token: null, profile: null },
 };
@@ -485,6 +486,7 @@ document.addEventListener("DOMContentLoaded", () => {
     els.startDate = document.getElementById("start-date");
     els.endDate = document.getElementById("end-date");
     els.timezone = document.getElementById("timezone");
+    els.outputMode = document.getElementById("output-mode");
     els.periodHelpOM = document.getElementById("period-help-openmeteo");
     els.periodHelpMS = document.getElementById("period-help-meteostat");
     els.periodHelpPW = document.getElementById("period-help-power");
@@ -518,6 +520,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setupLocationTabs();
     setupMapControls();
 
+    if (els.outputMode) {
+        els.outputMode.addEventListener("change", () => {
+            state.outputMode = els.outputMode.value || "daily";
+            if (state.lastResult) renderPreview(previewResultForMode(state.lastResult));
+        });
+    }
     els.previewBtn.addEventListener("click", () => handleSubmit({ download: false }));
     els.form.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -1157,21 +1165,30 @@ async function handleSubmit({ download }) {
             });
         }
 
-        state.lastResult = result;
-        renderPreview(result);
         if (result.rows.length === 0) {
+            state.lastResult = result;
+            renderPreview(result);
             showStatus(emptyResultMessage(result), "error");
             return;
         }
+        state.lastResult = result;
+        const previewResult = previewResultForMode(result);
+        renderPreview(previewResult);
         if (download) {
-            exportXlsx(result);
+            exportXlsx(result, getOutputMode());
+            const rowLabel = getOutputMode() === "monthly"
+                ? `${previewResult.rows.length} baris rekap bulanan`
+                : `${result.rows.length} baris harian`;
             showStatus(
-                `Berhasil. ${result.rows.length} baris diunduh sebagai Excel.`,
+                `Berhasil. ${rowLabel} diunduh sebagai Excel.`,
                 "success"
             );
         } else {
+            const rowLabel = getOutputMode() === "monthly"
+                ? `${previewResult.rows.length} baris rekap bulanan`
+                : `${result.rows.length} baris`;
             showStatus(
-                `Pratinjau dimuat: ${result.rows.length} baris. Klik "Unduh Excel" untuk simpan.`,
+                `Pratinjau dimuat: ${rowLabel}. Klik "Unduh Excel" untuk simpan.`,
                 "info"
             );
         }
@@ -1754,6 +1771,151 @@ async function fetchOpenMeteoSunshine({ lat, lon, startDate, endDate }) {
 
 // ----- Preview -----
 
+const MONTH_LABELS = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "Mei",
+    "Jun",
+    "Jul",
+    "Agst",
+    "Sept",
+    "Okt",
+    "Nov",
+    "Des",
+];
+
+function getOutputMode() {
+    return els.outputMode?.value || state.outputMode || "daily";
+}
+
+function previewResultForMode(result) {
+    return getOutputMode() === "monthly" ? buildMonthlyResult(result) : result;
+}
+
+function buildMonthlyResult(result) {
+    const monthly = buildMonthlyAggregation(result);
+    return {
+        ...result,
+        headers: [
+            "Tahun",
+            "Bulan",
+            ...monthly.metrics.map((m) => m.header),
+        ],
+        rows: monthly.longRows,
+        meta: {
+            ...result.meta,
+            granularity: "monthly",
+            outputMode: "monthly",
+        },
+    };
+}
+
+function buildMonthlyAggregation(result) {
+    const metrics = result.headers.slice(1).map((header, i) => ({
+        header,
+        index: i + 1,
+        sheetName: monthlySheetName(header),
+    }));
+    const speedMetric = metrics.find((m) =>
+        /kecepatan angin/i.test(m.header)
+    );
+    const directionMetric = metrics.find((m) =>
+        /arah angin/i.test(m.header)
+    );
+    const buckets = new Map();
+
+    for (const row of result.rows) {
+        const date = String(row[0] || "");
+        if (!/^\d{4}-\d{2}-\d{2}/.test(date)) continue;
+        const year = date.slice(0, 4);
+        const month = date.slice(5, 7);
+        const key = `${year}-${month}`;
+        if (!buckets.has(key)) {
+            buckets.set(key, {
+                year,
+                month,
+                values: metrics.map(() => []),
+                dirSin: 0,
+                dirCos: 0,
+                dirCount: 0,
+            });
+        }
+        const bucket = buckets.get(key);
+        const speed = speedMetric ? toNumber(row[speedMetric.index]) : null;
+        for (const metric of metrics) {
+            const value = toNumber(row[metric.index]);
+            if (value == null) continue;
+            if (metric === directionMetric) {
+                const weight = speed == null || speed <= 0 ? 1 : speed;
+                const rad = (value * Math.PI) / 180;
+                bucket.dirSin += Math.sin(rad) * weight;
+                bucket.dirCos += Math.cos(rad) * weight;
+                bucket.dirCount += 1;
+            } else {
+                bucket.values[metric.index - 1].push(value);
+            }
+        }
+    }
+
+    const years = Array.from(new Set([...buckets.values()].map((b) => b.year))).sort();
+    const rowsByKey = new Map();
+    const longRows = [];
+    for (const bucket of [...buckets.values()].sort((a, b) =>
+        a.year === b.year
+            ? Number(a.month) - Number(b.month)
+            : Number(a.year) - Number(b.year)
+    )) {
+        const values = metrics.map((metric) => {
+            if (metric === directionMetric) {
+                if (!bucket.dirCount || (bucket.dirSin === 0 && bucket.dirCos === 0)) {
+                    return null;
+                }
+                return roundMonthly(
+                    ((Math.atan2(bucket.dirSin, bucket.dirCos) * 180) / Math.PI + 360) % 360,
+                    metric.header
+                );
+            }
+            return roundMonthly(mean(bucket.values[metric.index - 1]), metric.header);
+        });
+        const key = `${bucket.year}-${bucket.month}`;
+        rowsByKey.set(key, values);
+        longRows.push([
+            bucket.year,
+            MONTH_LABELS[Number(bucket.month) - 1],
+            ...values,
+        ]);
+    }
+
+    return { metrics, years, rowsByKey, longRows };
+}
+
+function toNumber(value) {
+    if (value == null || value === "") return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+}
+
+function mean(values) {
+    if (!values || values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function roundMonthly(value, header) {
+    if (value == null) return null;
+    const digits = /arah angin/i.test(header) ? 0 : 2;
+    return Number(value.toFixed(digits));
+}
+
+function monthlySheetName(header) {
+    const base = header
+        .replace(/\s*\([^)]*\)\s*/g, "")
+        .replace(/[^a-z0-9]+/gi, " ")
+        .trim() || "Variabel";
+    return base.slice(0, 31);
+}
+
 function renderPreview(result) {
     els.previewSection.hidden = false;
     els.previewInfo.textContent = describeResult(result);
@@ -1784,6 +1946,9 @@ function renderPreview(result) {
 }
 
 function describeResult(result) {
+    const outputLabel = result.meta.outputMode === "monthly"
+        ? "rekap rata-rata bulanan"
+        : "data harian";
     if (result.source === "power") {
         const loc = result.meta.location;
         const c = result.meta.city;
@@ -1792,6 +1957,7 @@ function describeResult(result) {
             `${locDesc}` +
             ` - Periode: ${result.meta.startDate} to ${result.meta.endDate} (UTC)` +
             ` - Sumber: NASA POWER (${(result.meta.sources || []).join(", ") || "MERRA-2"})` +
+            ` - Output: ${outputLabel}` +
             ` - Total baris: ${result.rows.length}`
         );
     }
@@ -1807,7 +1973,9 @@ function describeResult(result) {
             `Stasiun: ${s.name} (WMO ${wmo}` +
             (s.icao ? ` / ${s.icao}` : "") +
             `) - Periode: ${result.meta.startDate} to ${result.meta.endDate}` +
-            ` - Sumber: Meteostat (NOAA ISD/SYNOP, harian) - Total baris: ${result.rows.length}` +
+            ` - Sumber: Meteostat (NOAA ISD/SYNOP, harian)` +
+            ` - Output: ${outputLabel}` +
+            ` - Total baris: ${result.rows.length}` +
             bfNote
         );
     }
@@ -1816,7 +1984,8 @@ function describeResult(result) {
     const locDesc = locationDescription(loc, c);
     return (
         `${locDesc} - Periode: ${result.meta.startDate} to ${result.meta.endDate}` +
-        ` - Granularitas: ${result.meta.granularity} - Sumber: ${result.meta.sources.join(" + ")}` +
+        ` - Granularitas: ${result.meta.granularity} - Output: ${outputLabel}` +
+        ` - Sumber: ${result.meta.sources.join(" + ")}` +
         ` - Total baris: ${result.rows.length}`
     );
 }
@@ -1847,8 +2016,12 @@ function locationDescription(loc, fallbackCity) {
 
 // ----- Excel export -----
 
-function exportXlsx(result) {
+function exportXlsx(result, outputMode = "daily") {
     const wb = XLSX.utils.book_new();
+    if (outputMode === "monthly") {
+        appendMonthlySheets(wb, result);
+    }
+
     const aoa = [result.headers, ...result.rows];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = result.headers.map((h, idx) => {
@@ -1859,15 +2032,61 @@ function exportXlsx(result) {
         }
         return { wch: Math.min(max + 2, 40) };
     });
-    XLSX.utils.book_append_sheet(wb, ws, "Data");
+    XLSX.utils.book_append_sheet(wb, ws, outputMode === "monthly" ? "Data Harian" : "Data");
 
     const metaRows = buildMetaRows(result);
+    if (outputMode === "monthly") {
+        metaRows.splice(1, 0, ["Output Excel", "Rekap rata-rata per bulan"]);
+        metaRows.splice(2, 0, [
+            "Catatan rekap",
+            "Setiap sheet variabel berisi rata-rata nilai harian per bulan, dengan baris bulan dan kolom tahun.",
+        ]);
+    }
     const metaWs = XLSX.utils.aoa_to_sheet(metaRows);
     metaWs["!cols"] = [{ wch: 22 }, { wch: 50 }];
     XLSX.utils.book_append_sheet(wb, metaWs, "Info");
 
-    const filename = buildFilename(result);
+    const filename = buildFilename(result, outputMode);
     XLSX.writeFile(wb, filename);
+}
+
+function appendMonthlySheets(wb, result) {
+    const monthly = buildMonthlyAggregation(result);
+    const usedNames = new Set();
+    const orderedMetrics = [...monthly.metrics].sort((a, b) => {
+        const ar = /curah hujan|presipitasi/i.test(a.header) ? 0 : 1;
+        const br = /curah hujan|presipitasi/i.test(b.header) ? 0 : 1;
+        return ar - br;
+    });
+    for (const metric of orderedMetrics) {
+        const aoa = [
+            [metric.header, ...monthly.years],
+            ...MONTH_LABELS.map((monthLabel, monthIndex) => [
+                monthLabel,
+                ...monthly.years.map((year) => {
+                    const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+                    const values = monthly.rowsByKey.get(key);
+                    return values ? values[metric.index - 1] : null;
+                }),
+            ]),
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws["!cols"] = [{ wch: 16 }, ...monthly.years.map(() => ({ wch: 12 }))];
+        XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(metric.sheetName, usedNames));
+    }
+}
+
+function uniqueSheetName(name, usedNames) {
+    let safeName = name.slice(0, 31) || "Sheet";
+    let candidate = safeName;
+    let count = 2;
+    while (usedNames.has(candidate)) {
+        const suffix = ` ${count}`;
+        candidate = `${safeName.slice(0, 31 - suffix.length)}${suffix}`;
+        count += 1;
+    }
+    usedNames.add(candidate);
+    return candidate;
 }
 
 // Render the location rows for the Excel Info sheet. Always includes the
@@ -2036,13 +2255,14 @@ function buildMetaRows(result) {
     ];
 }
 
-function buildFilename(result) {
+function buildFilename(result, outputMode = "daily") {
     const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
     const start = result.meta.startDate;
     const end = result.meta.endDate;
+    const suffix = outputMode === "monthly" ? "monthly" : "daily";
     if (result.source === "meteostat") {
         const s = result.meta.station;
-        return `weather_meteostat_${safe(s.wmo || s.id)}_${start}_to_${end}.xlsx`;
+        return `weather_meteostat_${safe(s.wmo || s.id)}_${start}_to_${end}_${suffix}.xlsx`;
     }
     const loc = result.meta.location;
     let label = result.meta.city?.name || "lokasi";
@@ -2056,9 +2276,9 @@ function buildFilename(result) {
         }
     }
     if (result.source === "power") {
-        return `weather_power_${safe(label)}_${start}_to_${end}.xlsx`;
+        return `weather_power_${safe(label)}_${start}_to_${end}_${suffix}.xlsx`;
     }
-    return `weather_${safe(label)}_${start}_to_${end}_daily.xlsx`;
+    return `weather_${safe(label)}_${start}_to_${end}_${suffix}.xlsx`;
 }
 
 // ----- Windrose -----
