@@ -1,0 +1,8 @@
+.git/
+README.md
+
+# Backend dev-only artifacts (never deployed)
+backend/Dockerfile
+backend/fly.toml
+backend/.dockerignore
+backend/data/
