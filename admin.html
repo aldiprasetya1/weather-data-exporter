@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin - Angin Berhembus</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="128x128" href="assets/favicon.png" />
+    <link rel="apple-touch-icon" href="assets/favicon.png" />
+</head>
+<body data-page="admin">
+    <header>
+        <div class="brand">
+            <img src="assets/logo.png" alt="Logo Angin Berhembus" class="brand-logo" />
+            <div class="brand-text">
+                <h1>Admin Angin Berhembus</h1>
+                <p class="subtitle">
+                    Kelola token akses pengguna. Masukkan <code>X-Admin-Secret</code>
+                    untuk membuat, melihat, atau mencabut token.
+                </p>
+            </div>
+        </div>
+        <div class="auth-bar">
+            <span class="muted">Halaman admin terpisah</span>
+            <a class="link-button" href="/">Kembali ke aplikasi</a>
+        </div>
+    </header>
+
+    <main id="admin-view">
+        <section class="card">
+            <div class="card-header-row">
+                <h2>Kelola Token</h2>
+                <a class="link-button" href="/">Kembali ke aplikasi</a>
+            </div>
+            <p class="muted">
+                Halaman ini hanya memakai secret admin untuk endpoint admin.
+                Secret tidak disimpan permanen di browser.
+            </p>
+            <div class="field">
+                <label for="admin-secret">X-Admin-Secret</label>
+                <input
+                    id="admin-secret"
+                    type="password"
+                    placeholder="Masukkan ADMIN_SECRET"
+                    autocomplete="current-password"
+                />
+            </div>
+
+            <h3>Buat Token Baru</h3>
+            <div class="row">
+                <div class="field">
+                    <label for="admin-new-label">Label (nama pengguna)</label>
+                    <input id="admin-new-label" type="text" placeholder="Contoh: Andi" />
+                </div>
+                <div class="field">
+                    <label for="admin-new-days">Durasi</label>
+                    <select id="admin-new-days">
+                        <option value="1">1 hari</option>
+                        <option value="7" selected>7 hari</option>
+                        <option value="30">30 hari (1 bulan)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Jenis token</label>
+                <div class="radio-row compact">
+                    <label class="radio">
+                        <input type="radio" name="admin-token-mode" value="abs" checked />
+                        <span>
+                            <strong>Token ABS otomatis</strong>
+                            <em class="muted">Format: ABS-Tahun-JamMenit-KodeAcak</em>
+                        </span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="admin-token-mode" value="custom" />
+                        <span>
+                            <strong>Token sendiri</strong>
+                            <em class="muted">Isi manual 6-64 karakter: huruf, angka, - atau _</em>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="field">
+                    <label for="admin-new-token">Token</label>
+                    <input
+                        id="admin-new-token"
+                        type="text"
+                        placeholder="ABS-2026-1215-A8K4QZ"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                    <p id="admin-token-help" class="muted">
+                        Token otomatis akan dibuat saat tombol "Buat Token" ditekan.
+                    </p>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="admin-generate-token-btn" type="button">Buat Kode ABS Baru</button>
+                <button id="admin-create-btn" type="button" class="primary">Buat Token</button>
+                <button id="admin-refresh-btn" type="button">Muat Daftar Token</button>
+            </div>
+            <div id="admin-status" class="status" hidden></div>
+            <div id="admin-new-token-box" class="status info" hidden></div>
+
+            <h3>Daftar Token</h3>
+            <div class="table-wrap">
+                <table id="admin-tokens-table"></table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Admin Angin Berhembus</p>
+    </footer>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
