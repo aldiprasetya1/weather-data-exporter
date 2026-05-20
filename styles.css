@@ -1,0 +1,494 @@
+:root {
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --border: #e5e7eb;
+    --error: #dc2626;
+    --success: #059669;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+        Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+header {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px 16px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.brand-logo {
+    width: 140px;
+    height: auto;
+    flex-shrink: 0;
+}
+
+.brand-text {
+    min-width: 0;
+}
+
+header h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+    line-height: 1.1;
+}
+
+.subtitle {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.subtitle a { color: var(--primary); }
+
+@media (max-width: 560px) {
+    .brand { gap: 12px; }
+    .brand-logo { width: 88px; }
+    header h1 { font-size: 22px; }
+}
+
+main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 20px 40px;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+}
+
+.card h2 {
+    margin: 0 0 16px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 12px;
+    flex: 1;
+}
+
+.field label {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text);
+}
+
+.field input,
+.field select {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field input:focus,
+.field select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.field input[readonly] {
+    background: #f9fafb;
+    color: var(--text);
+}
+
+.row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.row .field {
+    min-width: 200px;
+}
+
+.muted {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 8px 0 0;
+}
+
+.autocomplete {
+    position: relative;
+}
+
+.suggestions {
+    position: absolute;
+    z-index: 20;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin: 4px 0 0;
+    padding: 4px;
+    list-style: none;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.suggestions li {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.suggestions li:hover,
+.suggestions li.active {
+    background: #eff6ff;
+}
+
+.suggestions li .meta {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 6px 12px;
+}
+
+.check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.check input { margin: 0; }
+
+.radio-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.radio-row.compact {
+    gap: 6px;
+}
+
+.radio {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.radio:has(input:checked) {
+    border-color: var(--primary);
+    background: #eff6ff;
+}
+
+.radio input { margin-top: 3px; }
+.radio span { display: flex; flex-direction: column; gap: 2px; }
+.radio em { font-style: normal; font-size: 13px; }
+
+select#station-select {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    padding: 6px;
+}
+
+select#station-select option {
+    padding: 4px 6px;
+}
+
+.windrose-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 12px;
+}
+
+.windrose-header h2 { margin: 0; }
+
+.windrose-chart {
+    width: 100%;
+    height: 520px;
+    min-height: 480px;
+}
+
+.windrose-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: 0 0 12px;
+}
+
+.radio.inline {
+    padding: 6px 10px;
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+button {
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: white;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+
+button:hover { background: #f3f4f6; }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+button.primary {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+
+.status {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.status.info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+.status.error { background: #fef2f2; color: var(--error); border: 1px solid #fecaca; }
+.status.success { background: #ecfdf5; color: var(--success); border: 1px solid #a7f3d0; }
+.status.loading { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+.table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th, td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+th {
+    background: #f9fafb;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+}
+
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) { background: #fafbfc; }
+
+footer {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px 20px 32px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+footer a { color: var(--primary); }
+
+/* The HTML `hidden` attribute must always win against our flex/grid layouts. */
+[hidden] { display: none !important; }
+
+/* Auth bar in header */
+.auth-bar {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--muted);
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.auth-bar #auth-label {
+    flex: 1;
+    color: var(--text);
+    font-weight: 500;
+}
+
+.link-button {
+    background: none;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 13px;
+    border-radius: 4px;
+    text-decoration: none;
+}
+
+.link-button:hover { background: rgba(37, 99, 235, 0.08); }
+
+/* Login card */
+.login-card { max-width: 520px; margin: 24px auto; }
+.login-card .actions { margin-top: 16px; }
+
+/* Admin panel */
+.card-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.card-header-row h2 { margin: 0; }
+
+.token-display {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    word-break: break-all;
+    user-select: all;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.badge.good { background: #d1fae5; color: #065f46; }
+.badge.bad  { background: #fee2e2; color: #991b1b; }
+.badge.muted { background: #e5e7eb; color: #4b5563; }
+
+.status.info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+.status.success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+.status.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.status.loading { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+/* Tabs (Cari Nama / Pilih di Peta) */
+.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+.tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tab:hover { color: var(--primary); }
+.tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.map-canvas {
+    width: 100%;
+    height: 380px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 8px;
+}
+.map-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.mode-toggle {
+    display: flex;
+    gap: 8px;
+}
+.radio-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.radio-inline:has(input:checked) {
+    border-color: var(--primary);
+    background: #eff6ff;
+    color: var(--primary);
+}
+
+/* Override Leaflet's default z-index so popups don't punch through other UI. */
+.leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 100; }
+
+@media (max-width: 600px) {
+    header { padding: 20px 16px 8px; }
+    main { padding: 0 16px 24px; }
+    .card { padding: 16px; }
+    .actions { justify-content: stretch; }
+    .actions button { flex: 1; }
+    .map-canvas { height: 320px; }
+}
