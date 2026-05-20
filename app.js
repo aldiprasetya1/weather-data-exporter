@@ -1,8 +1,8 @@
-﻿// Weather Data Exporter â€” fetches weather data from Open-Meteo (model),
+﻿// Weather Data Exporter - fetches weather data from Open-Meteo (model),
 // Meteostat (Indonesian observation stations), or NASA POWER (MERRA-2
 // reanalysis with solar radiation), renders a windrose, and exports to
 // Excel. Every upstream call is proxied through the backend so a valid
-// Bearer token is required â€” see the login screen.
+// Bearer token is required - see the login screen.
 
 // Use ?? (not ||) so an explicit empty string from config.js is honored.
 // Empty == same-origin (the backend is a Vercel Serverless Function in
@@ -39,10 +39,10 @@ const OPENMETEO_HOURLY_VARS = [
 
 // Order of columns in the Open-Meteo daily preview/Excel output.
 const OPENMETEO_DAILY_COLS = [
-    { key: "temperature_2m_mean", label: "Suhu rata-rata", unit: "Â°C" },
+    { key: "temperature_2m_mean", label: "Suhu rata-rata", unit: "deg C" },
     { key: "precipitation_sum", label: "Curah hujan", unit: "mm" },
     { key: "wind_speed_10m_mean", label: "Kecepatan angin rata-rata", unit: "m/s" },
-    { key: "wind_direction_10m_dominant", label: "Arah angin dominan", unit: "Â°" },
+    { key: "wind_direction_10m_dominant", label: "Arah angin dominan", unit: "deg" },
     { key: "sunshine_duration_h", label: "Lama penyinaran matahari", unit: "jam" },
 ];
 
@@ -52,27 +52,27 @@ const OPENMETEO_DAILY_COLS = [
 // backend's km/h -> m/s conversion; sunshine duration (`tsun`) comes back in
 // minutes and is converted to hours on the client.
 const METEOSTAT_DISPLAY_COLS = [
-    { src: "tavg", label: "Suhu rata-rata", unit: "Â°C" },
+    { src: "tavg", label: "Suhu rata-rata", unit: "deg C" },
     { src: "prcp", label: "Curah hujan", unit: "mm" },
     { src: "wspd", label: "Kecepatan angin rata-rata", unit: "m/s" },
-    { src: "wdir", label: "Arah angin dominan", unit: "Â°" },
+    { src: "wdir", label: "Arah angin dominan", unit: "deg" },
     { src: "tsun_h", label: "Lama penyinaran matahari", unit: "jam" },
 ];
 
 // NASA POWER parameter metadata. Order here defines column order in the
 // export. All values are daily aggregates (UTC). NASA POWER does not expose a
 // direct "sunshine duration" parameter, so we report the daily all-sky GHI
-// (ALLSKY_SFC_SW_DWN, kWh/mÂ²/hari) as a solar-energy proxy and document the
+// (ALLSKY_SFC_SW_DWN, kWh/m2/hari) as a solar-energy proxy and document the
 // substitution in the Info sheet.
 const POWER_PARAMS = [
-    { key: "T2M", label: "Suhu rata-rata", unit: "Â°C" },
+    { key: "T2M", label: "Suhu rata-rata", unit: "deg C" },
     { key: "PRECTOTCORR", label: "Curah hujan", unit: "mm/hari" },
     { key: "WS10M", label: "Kecepatan angin rata-rata (10 m)", unit: "m/s" },
-    { key: "WD10M", label: "Arah angin dominan (10 m)", unit: "Â°" },
+    { key: "WD10M", label: "Arah angin dominan (10 m)", unit: "deg" },
     {
         key: "ALLSKY_SFC_SW_DWN",
         label: "Radiasi GHI (proxy penyinaran)",
-        unit: "kWh/mÂ²/hari",
+        unit: "kWh/m2/hari",
     },
 ];
 
@@ -191,7 +191,7 @@ function refreshAuthBar() {
     const expStr = exp
         ? exp.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
         : "?";
-    lab.textContent = `Login: ${p.label} Â· berakhir ${expStr}`;
+    lab.textContent = `Login: ${p.label} - berakhir ${expStr}`;
 }
 
 function showLoginStatus(msg, type = "info") {
@@ -679,7 +679,7 @@ function setupCityAutocomplete() {
             if (r.country) parts.push(r.country);
             li.innerHTML = `<strong>${escapeHtml(r.name)}</strong>
                 <span class="meta">${escapeHtml(parts.slice(1).join(", "))}
-                â€” ${r.latitude.toFixed(3)}, ${r.longitude.toFixed(3)}</span>`;
+                - ${r.latitude.toFixed(3)}, ${r.longitude.toFixed(3)}</span>`;
             li.addEventListener("click", () => selectCity(r));
             els.suggestions.appendChild(li);
         });
@@ -697,7 +697,7 @@ function setupCityAutocomplete() {
             (${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)},
             zona waktu: ${escapeHtml(r.timezone || "auto")})`;
         hideSuggestions();
-        // City autocomplete is the active picker â†’ mirror into state.location
+        // City autocomplete is the active picker to mirror into state.location
         // so the unified fetch path treats it like a 1-point pin.
         state.location = {
             mode: "city",
@@ -766,8 +766,8 @@ function renderStationList(list) {
         opt.value = s.id;
         const wmo = s.wmo || s.id;
         const icao = s.icao ? ` (${s.icao})` : "";
-        const inv = s.hourly_end ? ` Â· hourly ${s.hourly_start} â†’ ${s.hourly_end}` : "";
-        opt.textContent = `${wmo}${icao} â€” ${s.name}${inv}`;
+        const inv = s.hourly_end ? ` - hourly ${s.hourly_start} to ${s.hourly_end}` : "";
+        opt.textContent = `${wmo}${icao} - ${s.name}${inv}`;
         els.stationSelect.appendChild(opt);
     });
 }
@@ -863,7 +863,7 @@ function ensureMap() {
         return;
     }
     if (typeof L === 'undefined') {
-        // Leaflet still loading â€” try again shortly.
+        // Leaflet still loading - try again shortly.
         setTimeout(ensureMap, 200);
         return;
     }
@@ -885,7 +885,7 @@ function ensureMap() {
         if (state.mapMode === 'pin') {
             setPin(e.latlng.lat, e.latlng.lng);
         }
-        // In area mode the click is intentionally ignored â€” user must use
+        // In area mode the click is intentionally ignored - user must use
         // the rectangle draw control in the top-left corner instead.
     });
 
@@ -935,7 +935,7 @@ function applyMapMode() {
             );
         });
     }
-    // In pin mode there's no draw control â€” clicks on the map handle it.
+    // In pin mode there's no draw control - clicks on the map handle it.
 }
 
 function clearMapSelection() {
@@ -1020,8 +1020,8 @@ function setArea(west, south, east, north) {
     }
     if (state.mapLayers.draw) state.mapLayers.draw.clearLayers();
 
-    // Auto pick grid resolution from bbox span. Larger areas â†’ 5Ã—5 to
-    // sample more grid cells; small ones â†’ 3Ã—3 to stay light.
+    // Auto pick grid resolution from bbox span. Larger areas to 5x5 to
+    // sample more grid cells; small ones to 3x3 to stay light.
     const span = Math.max(Math.abs(east - west), Math.abs(north - south));
     const gridSize = span >= 1.0 ? 5 : 3;
 
@@ -1072,8 +1072,8 @@ function setArea(west, south, east, north) {
 
     const fmt = (v) => Number(v).toFixed(3);
     const label =
-        `Area ${fmt(south)}â€“${fmt(north)} LU/LS, ${fmt(west)}â€“${fmt(east)} BB/BT ` +
-        `(grid ${gridSize}Ã—${gridSize}, ${points.length} titik)`;
+        `Area ${fmt(south)}-${fmt(north)} LU/LS, ${fmt(west)}-${fmt(east)} BB/BT ` +
+        `(grid ${gridSize}x${gridSize}, ${points.length} titik)`;
 
     state.location = {
         mode: 'area',
@@ -1135,7 +1135,7 @@ async function handleSubmit({ download }) {
         } else if (state.source === "power") {
             if (!state.location) {
                 throw new Error(
-                    "Pilih lokasi dulu (cari kota atau klik di peta) â€” POWER butuh lat/lon."
+                    "Pilih lokasi dulu (cari kota atau klik di peta) - POWER butuh lat/lon."
                 );
             }
             result = await fetchPower({
@@ -1261,7 +1261,7 @@ async function fetchOpenMeteo({ location, startDate, endDate, timezone }) {
 
     // Accumulate hourly samples keyed by local-date (YYYY-MM-DD). For area
     // mode we fetch each grid point and pour all hourly samples into the
-    // same per-day buckets â€” the daily mean across N points Ã— 24 h â‰ˆ
+    // same per-day buckets - the daily mean across N points x 24 h ~
     // spatial+temporal mean for the day.
     const groups = {};
     const points = location.points;
@@ -1790,9 +1790,9 @@ function describeResult(result) {
         const locDesc = locationDescription(loc, c);
         return (
             `${locDesc}` +
-            ` Â· Periode: ${result.meta.startDate} â†’ ${result.meta.endDate} (UTC)` +
-            ` Â· Sumber: NASA POWER (${(result.meta.sources || []).join(", ") || "MERRA-2"})` +
-            ` Â· Total baris: ${result.rows.length}`
+            ` - Periode: ${result.meta.startDate} to ${result.meta.endDate} (UTC)` +
+            ` - Sumber: NASA POWER (${(result.meta.sources || []).join(", ") || "MERRA-2"})` +
+            ` - Total baris: ${result.rows.length}`
         );
     }
     if (result.source === "meteostat") {
@@ -1801,13 +1801,13 @@ function describeResult(result) {
         const bf = result.meta.tsunBackfill || {};
         const bfCount = Array.isArray(bf.dates) ? bf.dates.length : 0;
         const bfNote = bfCount > 0
-            ? ` Â· Lama penyinaran: ${bfCount} hari di-backfill dari Open-Meteo ERA5`
+            ? ` - Lama penyinaran: ${bfCount} hari di-backfill dari Open-Meteo ERA5`
             : "";
         return (
             `Stasiun: ${s.name} (WMO ${wmo}` +
             (s.icao ? ` / ${s.icao}` : "") +
-            `) Â· Periode: ${result.meta.startDate} â†’ ${result.meta.endDate}` +
-            ` Â· Sumber: Meteostat (NOAA ISD/SYNOP, harian) Â· Total baris: ${result.rows.length}` +
+            `) - Periode: ${result.meta.startDate} to ${result.meta.endDate}` +
+            ` - Sumber: Meteostat (NOAA ISD/SYNOP, harian) - Total baris: ${result.rows.length}` +
             bfNote
         );
     }
@@ -1815,9 +1815,9 @@ function describeResult(result) {
     const loc = result.meta.location;
     const locDesc = locationDescription(loc, c);
     return (
-        `${locDesc} Â· Periode: ${result.meta.startDate} â†’ ${result.meta.endDate}` +
-        ` Â· Granularitas: ${result.meta.granularity} Â· Sumber: ${result.meta.sources.join(" + ")}` +
-        ` Â· Total baris: ${result.rows.length}`
+        `${locDesc} - Periode: ${result.meta.startDate} to ${result.meta.endDate}` +
+        ` - Granularitas: ${result.meta.granularity} - Sumber: ${result.meta.sources.join(" + ")}` +
+        ` - Total baris: ${result.rows.length}`
     );
 }
 
@@ -1831,7 +1831,7 @@ function locationDescription(loc, fallbackCity) {
         const bb = loc.bbox || [];
         const fmt = (v) => Number(v).toFixed(3);
         return (
-            `Area: ${loc.gridSize}Ã—${loc.gridSize} grid (${loc.points.length} titik)` +
+            `Area: ${loc.gridSize}x${loc.gridSize} grid (${loc.points.length} titik)` +
             (bb.length === 4
                 ? `, bbox W=${fmt(bb[0])} S=${fmt(bb[1])} E=${fmt(bb[2])} N=${fmt(bb[3])}`
                 : "")
@@ -1913,7 +1913,7 @@ function locationRows(loc, fallbackCity) {
             ["Lokasi", loc.label || "Area peta"],
             [
                 "Mode lokasi",
-                `Area peta (grid ${loc.gridSize}Ã—${loc.gridSize} = ${loc.points.length} titik dirata-rata)`,
+                `Area peta (grid ${loc.gridSize}x${loc.gridSize} = ${loc.points.length} titik dirata-rata)`,
             ],
             ["Bounding box (W, S, E, N)", bb.length === 4 ? bb.map(fmt).join(", ") : ""],
             [
@@ -1936,10 +1936,10 @@ function locationRows(loc, fallbackCity) {
 
 function buildMetaRows(result) {
     const variableList = [
-        "1. Suhu rata-rata (Â°C)",
+        "1. Suhu rata-rata (deg C)",
         "2. Curah hujan / presipitasi (mm)",
         "3. Kecepatan angin rata-rata (m/s)",
-        "4. Arah angin dominan (Â°, 0â€“360)",
+        "4. Arah angin dominan (deg, 0-360)",
         "5. Lama penyinaran matahari (jam)",
     ].join(" | ");
 
@@ -1964,7 +1964,7 @@ function buildMetaRows(result) {
                 "Catatan penyinaran",
                 "NASA POWER tidak menyediakan kolom 'sunshine duration' langsung. " +
                     "Kolom 'Lama penyinaran' diisi dengan radiasi GHI all-sky " +
-                    "(ALLSKY_SFC_SW_DWN, kWh/mÂ²/hari) sebagai proxy energi penyinaran.",
+                    "(ALLSKY_SFC_SW_DWN, kWh/m2/hari) sebagai proxy energi penyinaran.",
             ],
             ["Time standard", result.meta.timeStandard || "UTC"],
             ["Diunduh pada", new Date().toISOString()],
@@ -1977,15 +1977,15 @@ function buildMetaRows(result) {
         const bfDates = Array.isArray(bf.dates) ? bf.dates : [];
         let sunshineNote =
             "Lama penyinaran berasal dari kolom Meteostat 'tsun' (menit) " +
-            "yang dikonversi ke jam (Ã·60).";
+            "yang dikonversi ke jam (/60).";
         if (bfDates.length > 0) {
             const shown = bfDates.slice(0, 10).join(", ");
             const more = bfDates.length > 10
-                ? ` â€¦ (+${bfDates.length - 10} lainnya)`
+                ? ` ... (+${bfDates.length - 10} lainnya)`
                 : "";
             sunshineNote +=
                 ` ${bfDates.length} tanggal di-backfill dari Open-Meteo ERA5 ` +
-                `(sunshine_duration, detik Ã· 60) karena 'tsun' Meteostat kosong: ` +
+                `(sunshine_duration, detik / 60) karena 'tsun' Meteostat kosong: ` +
                 `${shown}${more}.`;
         }
         if (bf.error) {
@@ -2029,7 +2029,7 @@ function buildMetaRows(result) {
             "Catatan agregasi",
             "Nilai harian dihitung dari data hourly Open-Meteo: suhu = mean, " +
                 "curah hujan = sum, kecepatan angin = mean, arah angin = " +
-                "speed-weighted vector mean, lama penyinaran = sum (detik) Ã· 3600.",
+                "speed-weighted vector mean, lama penyinaran = sum (detik) / 3600.",
         ],
         ["Sumber data", result.meta.sources.join(" + ")],
         ["Diunduh pada", new Date().toISOString()],
@@ -2082,12 +2082,12 @@ const WINDROSE_DIRECTIONS = [
     { theta: "NNW", deg: 337.5 },
 ];
 const WINDROSE_BINS = [
-    { label: "0â€“1", min: 0, max: 1, color: "#deebf7" },
-    { label: "1â€“3", min: 1, max: 3, color: "#9ecae1" },
-    { label: "3â€“5", min: 3, max: 5, color: "#6baed6" },
-    { label: "5â€“7", min: 5, max: 7, color: "#4292c6" },
-    { label: "7â€“9", min: 7, max: 9, color: "#2171b5" },
-    { label: "9â€“11", min: 9, max: 11, color: "#08519c" },
+    { label: "0-1", min: 0, max: 1, color: "#deebf7" },
+    { label: "1-3", min: 1, max: 3, color: "#9ecae1" },
+    { label: "3-5", min: 3, max: 5, color: "#6baed6" },
+    { label: "5-7", min: 5, max: 7, color: "#4292c6" },
+    { label: "7-9", min: 7, max: 9, color: "#2171b5" },
+    { label: "9-11", min: 9, max: 11, color: "#08519c" },
     { label: "11+", min: 11, max: Infinity, color: "#08306b" },
 ];
 
@@ -2175,9 +2175,9 @@ function showWindrose() {
         : "Blowing FROM (asal angin, konvensi meteorologi)";
     els.windroseInfo.textContent =
         `Mode: ${modeLabel}. ` +
-        `Total observasi: ${total} (calm â‰¤ 0.5 m/s: ${calmCount} = ` +
+        `Total observasi: ${total} (calm <= 0.5 m/s: ${calmCount} = ` +
         `${total > 0 ? ((calmCount / total) * 100).toFixed(1) : "0"}%). ` +
-        `Frekuensi tiap sektor 22.5Â°, dibagi per bin kecepatan.`;
+        `Frekuensi tiap sektor 22.5deg, dibagi per bin kecepatan.`;
     els.windroseSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -2186,23 +2186,23 @@ function windroseTitle(result, mode) {
     if (result.source === "meteostat") {
         const s = result.meta.station;
         return (
-            `Windrose (${tag}) Â· ${s.name} (WMO ${s.wmo || s.id})` +
-            ` Â· ${result.meta.startDate} â†’ ${result.meta.endDate}`
+            `Windrose (${tag}) - ${s.name} (WMO ${s.wmo || s.id})` +
+            ` - ${result.meta.startDate} to ${result.meta.endDate}`
         );
     }
     if (result.source === "power") {
         const c = result.meta.city;
         return (
-            `Windrose (${tag}) Â· ${c.name} (NASA POWER, 10 m)` +
-            ` Â· ${result.meta.startDate} â†’ ${result.meta.endDate}`
+            `Windrose (${tag}) - ${c.name} (NASA POWER, 10 m)` +
+            ` - ${result.meta.startDate} to ${result.meta.endDate}`
         );
     }
     const c = result.meta.city;
-    return `Windrose (${tag}) Â· ${c.name} Â· ${result.meta.startDate} â†’ ${result.meta.endDate}`;
+    return `Windrose (${tag}) - ${c.name} - ${result.meta.startDate} to ${result.meta.endDate}`;
 }
 
 function directionIndex(degrees) {
-    // Map 0..360 to nearest of 16 cardinal sectors (each 22.5Â° wide).
+    // Map 0..360 to nearest of 16 cardinal sectors (each 22.5deg wide).
     const norm = ((degrees % 360) + 360) % 360;
     return Math.round(norm / 22.5) % 16;
 }
