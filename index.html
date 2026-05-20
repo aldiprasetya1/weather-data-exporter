@@ -84,21 +84,21 @@
                         <input type="radio" name="source" value="openmeteo" checked />
                         <span>
                             <strong>Open-Meteo (model global)</strong>
-                            <em class="muted">— grid reanalysis/forecast, kota mana saja di dunia</em>
+                            <em class="muted">- grid reanalysis/forecast, kota mana saja di dunia</em>
                         </span>
                     </label>
                     <label class="radio">
                         <input type="radio" name="source" value="meteostat" />
                         <span>
                             <strong>Meteostat (stasiun observasi Indonesia)</strong>
-                            <em class="muted">— observasi historis dari stasiun ASOS/SYNOP BMKG (~129 stasiun)</em>
+                            <em class="muted">- observasi historis dari stasiun ASOS/SYNOP BMKG (~129 stasiun)</em>
                         </span>
                     </label>
                     <label class="radio">
                         <input type="radio" name="source" value="power" />
                         <span>
                             <strong>NASA POWER (model + radiasi surya)</strong>
-                            <em class="muted">— MERRA-2 reanalysis, lengkap dengan GHI/DNI/DHI/PAR (untuk PV / pertanian)</em>
+                            <em class="muted">- MERRA-2 reanalysis, lengkap dengan GHI/DNI/DHI/PAR (untuk PV / pertanian)</em>
                         </span>
                     </label>
                 </div>
@@ -149,7 +149,7 @@
                                     value="pin"
                                     checked
                                 />
-                                <span>📍 Pin tunggal</span>
+                                <span> Pin tunggal</span>
                             </label>
                             <label class="radio-inline">
                                 <input
@@ -157,7 +157,7 @@
                                     name="map-mode"
                                     value="area"
                                 />
-                                <span>▢ Area (kotak → grid)</span>
+                                <span> Area (kotak to grid)</span>
                             </label>
                         </div>
                         <button
@@ -170,8 +170,8 @@
                     <p id="map-help" class="muted">
                         <strong>Pin tunggal:</strong> klik di peta untuk taruh
                         marker. Marker bisa digeser. <strong>Area:</strong>
-                        gambar kotak — sistem otomatis membentuk grid 3×3
-                        (kotak kecil &lt; 1°) atau 5×5 (lebih besar) lalu
+                        gambar kotak - sistem otomatis membentuk grid 3x3
+                        (kotak kecil &lt; 1deg) atau 5x5 (lebih besar) lalu
                         merata-ratakan data semua titik per hari.
                     </p>
                     <p id="selected-location" class="muted">Belum ada lokasi yang dipilih di peta.</p>
@@ -225,7 +225,7 @@
                     di seluruh data dan windrose menggunakan satuan <strong>m/s</strong>.
                 </p>
                 <p class="muted" id="period-help-openmeteo">
-                    Sumber: ERA5 reanalysis (1940 – ~5 hari yang lalu) untuk historis,
+                    Sumber: ERA5 reanalysis (1940 - ~5 hari yang lalu) untuk historis,
                     dan model forecast untuk 16 hari ke depan. Sistem otomatis memilih.
                 </p>
                 <p class="muted" id="period-help-meteostat" hidden>
@@ -234,44 +234,59 @@
                 </p>
                 <p class="muted" id="period-help-power" hidden>
                     Sumber: NASA POWER (MERRA-2 reanalysis + CERES/SYN1deg untuk radiasi),
-                    data harian. Tersedia 1981-01-01 → ~2 hari yang lalu. Maks 366 hari per request.
+                    data harian. Tersedia 1981-01-01 sampai ~2 hari yang lalu. Maks 366 hari per request.
                 </p>
             </section>
 
             <section id="vars-section" class="card">
-                <h2>4. Variabel Cuaca</h2>
+                <h2>4. Output Excel</h2>
+                <div class="field">
+                    <label for="output-mode">Format output</label>
+                    <select id="output-mode">
+                        <option value="daily" selected>Data harian</option>
+                        <option value="monthly">Rekap rata-rata per bulan</option>
+                    </select>
+                    <p class="muted">
+                        Mode bulanan membuat tabel bulan x tahun seperti laporan BMKG.
+                        Setiap variabel dibuat sebagai sheet terpisah di Excel.
+                    </p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>5. Variabel Cuaca</h2>
                 <p class="muted">
                     Lima variabel harian yang diekspor (sama untuk semua sumber):
-                    <strong>suhu rata-rata (°C)</strong>,
+                    <strong>suhu rata-rata (deg C)</strong>,
                     <strong>curah hujan / presipitasi (mm)</strong>,
                     <strong>kecepatan angin rata-rata (m/s)</strong>,
-                    <strong>arah angin dominan (°)</strong>, dan
+                    <strong>arah angin dominan (deg)</strong>, dan
                     <strong>lama penyinaran matahari (jam)</strong>.
                 </p>
                 <p class="muted" id="vars-help-openmeteo">
                     Open-Meteo: data hourly diunduh lalu diagregasi ke harian di sisi
-                    klien — suhu &amp; angin pakai rata-rata, presipitasi pakai total,
+                    klien - suhu &amp; angin pakai rata-rata, presipitasi pakai total,
                     arah angin pakai speed-weighted vector mean, penyinaran pakai
-                    total detik ÷ 3600.
+                    total detik / 3600.
                 </p>
                 <p class="muted" id="vars-help-meteostat" hidden>
                     Meteostat: kolom <code>tavg</code>, <code>prcp</code>,
                     <code>wspd</code>, <code>wdir</code>, <code>tsun</code> (menit
-                    → dikonversi ke jam).
+                    dikonversi ke jam).
                 </p>
                 <p class="muted" id="vars-help-power" hidden>
                     NASA POWER: <code>T2M</code>, <code>PRECTOTCORR</code>,
                     <code>WS10M</code>, <code>WD10M</code>. NASA POWER tidak menyediakan
-                    kolom sunshine duration langsung — kolom &ldquo;Lama penyinaran&rdquo;
+                    kolom sunshine duration langsung - kolom &ldquo;Lama penyinaran&rdquo;
                     diisi <strong>radiasi GHI all-sky (<code>ALLSKY_SFC_SW_DWN</code>,
-                    kWh/m²/hari)</strong> sebagai proxy energi penyinaran.
+                    kWh/m2/hari)</strong> sebagai proxy energi penyinaran.
                 </p>
             </section>
 
             <div class="actions">
                 <button id="preview-btn" type="button">Pratinjau Data</button>
-                <button id="download-btn" type="submit" class="primary">⬇ Unduh Excel (.xlsx)</button>
-                <button id="windrose-btn" type="button">🌬️ Tampilkan Windrose</button>
+                <button id="download-btn" type="submit" class="primary">Unduh Excel (.xlsx)</button>
+                <button id="windrose-btn" type="button">Tampilkan Windrose</button>
             </div>
 
             <div id="status" class="status" hidden></div>
@@ -280,17 +295,17 @@
         <section id="windrose-section" class="card" hidden>
             <div class="windrose-header">
                 <h2>Windrose</h2>
-                <button id="windrose-download" type="button">⬇ Unduh PNG</button>
+                <button id="windrose-download" type="button"> Unduh PNG</button>
             </div>
             <div class="windrose-controls">
                 <span class="muted">Mode:</span>
                 <label class="radio inline">
                     <input type="radio" name="windrose-mode" value="from" checked />
-                    <span><strong>Blowing FROM</strong> <em class="muted">— asal angin (konvensi meteorologi)</em></span>
+                    <span><strong>Blowing FROM</strong> <em class="muted">- asal angin (konvensi meteorologi)</em></span>
                 </label>
                 <label class="radio inline">
                     <input type="radio" name="windrose-mode" value="to" />
-                    <span><strong>Blowing TO</strong> <em class="muted">— arah hembusan</em></span>
+                    <span><strong>Blowing TO</strong> <em class="muted">- arah hembusan</em></span>
                 </label>
             </div>
             <div id="windrose-info" class="muted"></div>
