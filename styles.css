@@ -559,16 +559,16 @@ main#app-view {
     top: 16px;
     min-height: 620px;
     padding: 22px;
-    color: #e2e8f0;
-    background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
-    border: 1px solid #1e293b;
+    color: #334155;
+    background: #ffffff;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+    box-shadow: none;
 }
 
 .workflow-kicker {
     margin: 0 0 10px;
-    color: #5eead4;
+    color: #0f766e;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -577,7 +577,7 @@ main#app-view {
 
 .workflow-sidebar h2 {
     margin: 0 0 18px;
-    color: #ffffff;
+    color: var(--navy);
     font-size: 22px;
     line-height: 1.15;
 }
@@ -603,9 +603,9 @@ main#app-view {
     place-items: center;
     width: 34px;
     height: 34px;
-    color: #99f6e4;
-    background: rgba(20, 184, 166, 0.12);
-    border: 1px solid rgba(94, 234, 212, 0.35);
+    color: #0f766e;
+    background: #ecfdf5;
+    border: 1px solid #99f6e4;
     border-radius: 8px;
     font-size: 12px;
     font-weight: 800;
@@ -613,13 +613,13 @@ main#app-view {
 
 .workflow-steps strong {
     display: block;
-    color: #f8fafc;
+    color: #0f172a;
     font-size: 14px;
 }
 
 .workflow-steps small {
     display: block;
-    color: #94a3b8;
+    color: #64748b;
     font-size: 12px;
     line-height: 1.45;
 }
@@ -627,20 +627,20 @@ main#app-view {
 .sidebar-panel {
     margin-top: 22px;
     padding: 14px;
-    background: rgba(248, 250, 252, 0.06);
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: #f8fafc;
+    border: 1px solid var(--border);
     border-radius: 8px;
 }
 
 .sidebar-panel strong {
     display: block;
-    color: #ffffff;
+    color: #0f172a;
     font-size: 13px;
 }
 
 .sidebar-panel p {
     margin: 6px 0 0;
-    color: #cbd5e1;
+    color: #64748b;
     font-size: 12px;
     line-height: 1.55;
 }
