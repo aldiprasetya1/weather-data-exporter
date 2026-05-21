@@ -73,6 +73,7 @@ OPENMETEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 HTTP_TIMEOUT = 30.0
 MAX_RANGE_DAYS = 366  # one year max per request
+MAX_DAILY_RANGE_DAYS = 366 * 15  # baseline studies commonly use 5-15 years
 
 # Meteostat daily CSV columns. See https://dev.meteostat.net/bulk/daily.html
 METEOSTAT_DAILY_COLS = [
@@ -233,27 +234,41 @@ async def daily(
         raise HTTPException(status_code=400, detail=f"Invalid date: {exc}") from exc
     if start_d > end_d:
         raise HTTPException(status_code=400, detail="`start` must be on or before `end`")
-    if (end_d - start_d).days > MAX_RANGE_DAYS:
+    if (end_d - start_d).days > MAX_DAILY_RANGE_DAYS:
         raise HTTPException(
             status_code=400,
-            detail=f"Range too large; max {MAX_RANGE_DAYS} days per request",
+            detail=f"Range too large; max {MAX_DAILY_RANGE_DAYS} days per request",
         )
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        rows = await _fetch_daily(client, station_id)
+        expected_dates = _date_range(start_d, end_d)
+        daily_rows = await _fetch_daily(client, station_id)
+        rows_by_date = {
+            r["date"]: r
+            for r in daily_rows
+            if start <= r["date"] <= end
+        }
+        source_by_date = {
+            d: "meteostat_daily"
+            for d in rows_by_date
+        }
 
-        rows = [r for r in rows if start <= r["date"] <= end]
-        rows.sort(key=lambda r: r["date"])
-        fallback_from_hourly = False
-        if not rows:
+        missing_dates = [d for d in expected_dates if d not in rows_by_date]
+        if missing_dates:
             hourly_rows: list[dict] = []
-            for year in range(start_d.year, end_d.year + 1):
+            missing_set = set(missing_dates)
+            missing_years = sorted({int(d[:4]) for d in missing_dates})
+            for year in missing_years:
                 year_rows = await _fetch_year(client, station_id, year)
                 hourly_rows.extend(
-                    r for r in year_rows if start <= r["date"] <= end
+                    r for r in year_rows if r["date"] in missing_set
                 )
-            rows = _aggregate_hourly_to_daily(hourly_rows)
-            fallback_from_hourly = bool(rows)
+            for row in _aggregate_hourly_to_daily(hourly_rows):
+                if row["date"] not in rows_by_date:
+                    rows_by_date[row["date"]] = row
+                    source_by_date[row["date"]] = "meteostat_hourly_aggregated"
+
+        rows = [rows_by_date[d] for d in expected_dates if d in rows_by_date]
 
         # Meteostat's `tsun` field is frequently null for Indonesian stations
         # because most BMKG stations don't report calibrated sunshine duration
@@ -305,13 +320,35 @@ async def daily(
         "rows": out_rows,
         "count": len(out_rows),
         "range": {"start": start, "end": end},
-        "fallback": "hourly_aggregated" if fallback_from_hourly else None,
+        "row_sources": [source_by_date.get(r["date"], "unknown") for r in rows],
+        "source_counts": _count_sources(source_by_date.values()),
+        "fallback": (
+            "hourly_aggregated"
+            if any(v == "meteostat_hourly_aggregated" for v in source_by_date.values())
+            else None
+        ),
         "tsun_backfill": {
             "source": "open-meteo-era5",
             "dates": backfill_dates,
             "error": backfill_error,
         },
     }
+
+
+def _date_range(start: date, end: date) -> list[str]:
+    days = []
+    cur = start
+    while cur <= end:
+        days.append(cur.isoformat())
+        cur += timedelta(days=1)
+    return days
+
+
+def _count_sources(values) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
 
 
 def _aggregate_hourly_to_daily(rows: list[dict]) -> list[dict]:
