@@ -498,12 +498,17 @@ document.addEventListener("DOMContentLoaded", () => {
     els.varsHelpPW = document.getElementById("vars-help-power");
     els.previewBtn = document.getElementById("preview-btn");
     els.downloadBtn = document.getElementById("download-btn");
+    els.climateChartBtn = document.getElementById("climate-chart-btn");
     els.windroseBtn = document.getElementById("windrose-btn");
     els.form = document.getElementById("weather-form");
     els.status = document.getElementById("status");
     els.previewSection = document.getElementById("preview-section");
     els.previewInfo = document.getElementById("preview-info");
     els.previewTable = document.getElementById("preview-table");
+    els.climateChartSection = document.getElementById("climate-chart-section");
+    els.climateChartInfo = document.getElementById("climate-chart-info");
+    els.climateChart = document.getElementById("climate-chart");
+    els.climateChartDownload = document.getElementById("climate-chart-download");
     els.windroseSection = document.getElementById("windrose-section");
     els.windroseInfo = document.getElementById("windrose-info");
     els.windroseChart = document.getElementById("windrose-chart");
@@ -523,7 +528,7 @@ document.addEventListener("DOMContentLoaded", () => {
         els.baselineBtn.addEventListener("click", () => {
             els.startDate.value = "2016-01-01";
             els.endDate.value = "2025-12-31";
-            showStatus("Baseline 2016-2025 siap dipakai.", "info");
+            showStatus("Rentang unduh data 2016 - 2025 siap dipakai.", "info");
         });
     }
     if (els.outputMode) {
@@ -537,6 +542,8 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         handleSubmit({ download: true });
     });
+    els.climateChartBtn.addEventListener("click", showClimateChart);
+    els.climateChartDownload.addEventListener("click", downloadClimateChartPNG);
     els.windroseBtn.addEventListener("click", showWindrose);
     els.windroseDownload.addEventListener("click", downloadWindrosePNG);
     els.windroseModeRadios.forEach((r) =>
@@ -1180,6 +1187,7 @@ async function handleSubmit({ download }) {
         state.lastResult = result;
         const previewResult = previewResultForMode(result);
         renderPreview(previewResult);
+        renderClimateChart(result);
         if (download) {
             exportXlsx(result, getOutputMode());
             const rowLabel = getOutputMode() === "monthly"
@@ -1218,6 +1226,7 @@ function setLoading(loading, download = false) {
     }
     els.previewBtn.disabled = loading;
     els.downloadBtn.disabled = loading;
+    if (els.climateChartBtn) els.climateChartBtn.disabled = loading;
     els.windroseBtn.disabled = loading;
     els.previewBtn.textContent = loading && !download
         ? "Memuat..."
@@ -2144,6 +2153,150 @@ function locationDescription(loc, fallbackCity) {
         );
     }
     return `Lokasi: ${parts.join(", ")} (${c.latitude?.toFixed(3) ?? "?"}, ${c.longitude?.toFixed(3) ?? "?"})`;
+}
+
+// ----- Climate chart -----
+
+function showClimateChart() {
+    if (!state.lastResult) {
+        showStatus("Klik 'Pratinjau Data' dulu untuk memuat data sebelum render grafik.", "error");
+        return;
+    }
+    renderClimateChart(state.lastResult, true);
+}
+
+function renderClimateChart(result, scroll = false) {
+    if (!result || !result.rows || result.rows.length === 0 || !els.climateChart) return;
+    const chart = buildClimateChartData(result);
+    if (!chart.months.length) {
+        if (scroll) showStatus("Data belum cukup untuk membuat grafik bulanan.", "error");
+        return;
+    }
+
+    const traces = [
+        {
+            type: "bar",
+            x: chart.months,
+            y: chart.precip,
+            name: "Curah hujan (mm)",
+            marker: { color: "#0f766e" },
+            yaxis: "y",
+            hovertemplate: "%{x}<br>Curah hujan: %{y:.2f} mm<extra></extra>",
+        },
+        {
+            type: "scatter",
+            mode: "lines+markers",
+            x: chart.months,
+            y: chart.temp,
+            name: "Suhu rata-rata (deg C)",
+            line: { color: "#1e3a8a", width: 2 },
+            marker: { size: 5 },
+            yaxis: "y2",
+            hovertemplate: "%{x}<br>Suhu: %{y:.2f} deg C<extra></extra>",
+        },
+    ];
+
+    const title = `Grafik rona awal - ${chart.label}`;
+    const layout = {
+        title: { text: title, font: { size: 15 } },
+        font: { family: "system-ui, sans-serif", color: "#0f172a" },
+        barmode: "group",
+        xaxis: {
+            title: "Bulan",
+            tickangle: chart.months.length > 24 ? -45 : 0,
+            automargin: true,
+        },
+        yaxis: {
+            title: "Curah hujan (mm)",
+            rangemode: "tozero",
+            gridcolor: "#e2e8f0",
+        },
+        yaxis2: {
+            title: "Suhu rata-rata (deg C)",
+            overlaying: "y",
+            side: "right",
+            showgrid: false,
+        },
+        legend: { orientation: "h", y: -0.25 },
+        margin: { t: 60, r: 70, b: 110, l: 70 },
+        paper_bgcolor: "white",
+        plot_bgcolor: "white",
+    };
+
+    Plotly.newPlot(els.climateChart, traces, layout, {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d"],
+    });
+
+    els.climateChartSection.hidden = false;
+    els.climateChartInfo.textContent =
+        "Grafik bulanan dari data harian: curah hujan dihitung sebagai total per bulan, " +
+        "suhu dihitung sebagai rata-rata harian per bulan.";
+    if (scroll) {
+        els.climateChartSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
+function buildClimateChartData(result) {
+    const tempIdx = result.headers.findIndex((h) => /suhu rata-rata/i.test(h));
+    const precipIdx = result.headers.findIndex((h) => /curah hujan|presipitasi/i.test(h));
+    const buckets = new Map();
+    for (const row of result.rows) {
+        const date = String(row[0] || "");
+        if (!/^\d{4}-\d{2}-\d{2}/.test(date)) continue;
+        const key = date.slice(0, 7);
+        if (!buckets.has(key)) {
+            buckets.set(key, { temp: [], precip: [] });
+        }
+        const bucket = buckets.get(key);
+        const temp = tempIdx >= 0 ? toNumber(row[tempIdx]) : null;
+        const precip = precipIdx >= 0 ? toNumber(row[precipIdx]) : null;
+        if (temp != null) bucket.temp.push(temp);
+        if (precip != null) bucket.precip.push(precip);
+    }
+    const keys = Array.from(buckets.keys()).sort();
+    return {
+        label: chartLocationLabel(result),
+        months: keys,
+        temp: keys.map((key) => roundChart(mean(buckets.get(key).temp))),
+        precip: keys.map((key) => roundChart(sumValues(buckets.get(key).precip))),
+    };
+}
+
+function sumValues(values) {
+    return values && values.length ? values.reduce((total, value) => total + value, 0) : null;
+}
+
+function roundChart(value) {
+    return value == null ? null : Number(value.toFixed(2));
+}
+
+function chartLocationLabel(result) {
+    if (result.source === "meteostat" && result.meta.station) {
+        return result.meta.station.name;
+    }
+    if (result.meta.location) {
+        return result.meta.location.label || result.meta.city?.name || "Lokasi";
+    }
+    return result.meta.city?.name || "Lokasi";
+}
+
+function downloadClimateChartPNG() {
+    if (!state.lastResult || !els.climateChart || els.climateChartSection.hidden) {
+        showStatus("Tampilkan grafik dulu sebelum unduh.", "error");
+        return;
+    }
+    const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
+    const filename =
+        `grafik_rona_awal_${safe(chartLocationLabel(state.lastResult))}_` +
+        `${state.lastResult.meta.startDate}_to_${state.lastResult.meta.endDate}`;
+    Plotly.downloadImage(els.climateChart, {
+        format: "png",
+        width: 1100,
+        height: 700,
+        filename,
+    });
 }
 
 // ----- Excel export -----
