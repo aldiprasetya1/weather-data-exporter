@@ -76,6 +76,54 @@
     </main>
 
     <main id="app-view" hidden>
+        <div class="dashboard-shell">
+            <aside class="workflow-sidebar" aria-label="Alur kerja export data">
+                <p class="workflow-kicker">Climate Data Platform</p>
+                <h2>Workflow Export</h2>
+                <ol class="workflow-steps">
+                    <li>
+                        <span>01</span>
+                        <div>
+                            <strong>Pilih sumber data</strong>
+                            <small>Meteostat, ERA5, atau NASA POWER</small>
+                        </div>
+                    </li>
+                    <li>
+                        <span>02</span>
+                        <div>
+                            <strong>Tentukan lokasi</strong>
+                            <small>Stasiun observasi, kota, pin, atau area</small>
+                        </div>
+                    </li>
+                    <li>
+                        <span>03</span>
+                        <div>
+                            <strong>Unduh data 2016 - 2025</strong>
+                            <small>Periode siap pakai untuk rona awal</small>
+                        </div>
+                    </li>
+                    <li>
+                        <span>04</span>
+                        <div>
+                            <strong>Audit kelengkapan</strong>
+                            <small>Cek hari tersedia, persen, dan tahun bolong</small>
+                        </div>
+                    </li>
+                    <li>
+                        <span>05</span>
+                        <div>
+                            <strong>Export laporan</strong>
+                            <small>Excel, tabel bulanan, grafik, dan metadata</small>
+                        </div>
+                    </li>
+                </ol>
+                <div class="sidebar-panel">
+                    <strong>Standar Konsultan</strong>
+                    <p>Setiap export mencatat sumber data: Meteostat Daily, Hourly Aggregated, atau reanalysis/model.</p>
+                </div>
+            </aside>
+
+            <div class="dashboard-workspace">
         <form id="weather-form">
             <section class="card">
                 <h2>1. Sumber Data</h2>
@@ -340,6 +388,8 @@
                 <table id="preview-table"></table>
             </div>
         </section>
+            </div>
+        </div>
     </main>
 
     <footer>
