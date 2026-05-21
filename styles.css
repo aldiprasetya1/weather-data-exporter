@@ -907,3 +907,31 @@ footer {
         grid-column: 1;
     }
 }
+
+/* Hard override for cached/dark sidebar variants. */
+main#app-view .workflow-sidebar {
+    color: #334155 !important;
+    background: #ffffff !important;
+    border-color: #dbe3ea !important;
+    box-shadow: none !important;
+}
+
+main#app-view .workflow-kicker {
+    color: #0f766e !important;
+}
+
+main#app-view .workflow-sidebar h2,
+main#app-view .workflow-steps strong,
+main#app-view .sidebar-panel strong {
+    color: #0f172a !important;
+}
+
+main#app-view .workflow-steps small,
+main#app-view .sidebar-panel p {
+    color: #64748b !important;
+}
+
+main#app-view .sidebar-panel {
+    background: #f8fafc !important;
+    border-color: #dbe3ea !important;
+}
