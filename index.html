@@ -229,7 +229,7 @@
                     </div>
                 </div>
                 <div class="actions">
-                    <button id="baseline-btn" type="button">Baseline 2016-2025</button>
+                    <button id="baseline-btn" type="button">Unduh data 2016 - 2025</button>
                 </div>
                 <p class="muted">
                     Granularitas: <strong>per hari (daily)</strong>. Semua kecepatan angin
@@ -297,11 +297,21 @@
             <div class="actions">
                 <button id="preview-btn" type="button">Pratinjau Data</button>
                 <button id="download-btn" type="submit" class="primary">Unduh Excel (.xlsx)</button>
+                <button id="climate-chart-btn" type="button">Tampilkan Grafik</button>
                 <button id="windrose-btn" type="button">Tampilkan Windrose</button>
             </div>
 
             <div id="status" class="status" hidden></div>
         </form>
+
+        <section id="climate-chart-section" class="card" hidden>
+            <div class="windrose-header">
+                <h2>Grafik Rona Awal</h2>
+                <button id="climate-chart-download" type="button">Unduh PNG</button>
+            </div>
+            <div id="climate-chart-info" class="muted"></div>
+            <div id="climate-chart" class="windrose-chart"></div>
+        </section>
 
         <section id="windrose-section" class="card" hidden>
             <div class="windrose-header">
