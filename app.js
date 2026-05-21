@@ -1714,6 +1714,7 @@ async function fetchMeteostat({ station, startDate, endDate }) {
             endDate,
             granularity: "daily",
             columns: data.columns,
+            dailyFallback: data.fallback || null,
             tsunBackfill: backfill,
         },
     };
@@ -1969,6 +1970,9 @@ function describeResult(result) {
         const bfNote = bfCount > 0
             ? ` - Lama penyinaran: ${bfCount} hari di-backfill dari Open-Meteo ERA5`
             : "";
+        const fallbackNote = result.meta.dailyFallback === "hourly_aggregated"
+            ? " - Data harian dibentuk dari agregasi hourly Meteostat"
+            : "";
         return (
             `Stasiun: ${s.name} (WMO ${wmo}` +
             (s.icao ? ` / ${s.icao}` : "") +
@@ -1976,6 +1980,7 @@ function describeResult(result) {
             ` - Sumber: Meteostat (NOAA ISD/SYNOP, harian)` +
             ` - Output: ${outputLabel}` +
             ` - Total baris: ${result.rows.length}` +
+            fallbackNote +
             bfNote
         );
     }
@@ -2226,6 +2231,12 @@ function buildMetaRows(result) {
             ["Granularitas", "daily"],
             ["Satuan kecepatan angin", "m/s"],
             ["Variabel", variableList],
+            [
+                "Catatan data harian",
+                result.meta.dailyFallback === "hourly_aggregated"
+                    ? "File daily Meteostat kosong untuk periode ini; data harian dibentuk dari agregasi hourly Meteostat."
+                    : "Data berasal dari file daily Meteostat.",
+            ],
             ["Catatan penyinaran", sunshineNote],
             ["Diunduh pada", new Date().toISOString()],
         ];
