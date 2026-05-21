@@ -219,6 +219,17 @@
                             <option value="UTC">UTC</option>
                         </select>
                     </div>
+                    <div class="field">
+                        <label for="fallback-source">Fallback jika observasi kosong</label>
+                        <select id="fallback-source">
+                            <option value="openmeteo" selected>Open-Meteo ERA5 (reanalysis/model)</option>
+                            <option value="power">NASA POWER (reanalysis/model)</option>
+                            <option value="none">Tidak pakai fallback</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="baseline-btn" type="button">Baseline 2016-2025</button>
                 </div>
                 <p class="muted">
                     Granularitas: <strong>per hari (daily)</strong>. Semua kecepatan angin
