@@ -2047,7 +2047,7 @@ function monthlySheetName(header) {
 
 function renderPreview(result) {
     els.previewSection.hidden = false;
-    els.previewInfo.textContent = describeResult(result);
+    renderPreviewInfo(result);
 
     const table = els.previewTable;
     table.innerHTML = "";
@@ -2072,6 +2072,64 @@ function renderPreview(result) {
         tbody.appendChild(tr);
     });
     table.appendChild(tbody);
+}
+
+function renderPreviewInfo(result) {
+    els.previewInfo.innerHTML = "";
+
+    const summary = document.createElement("div");
+    summary.className = "preview-summary-text";
+    summary.textContent = describeResult(result);
+    els.previewInfo.appendChild(summary);
+
+    const coverage = result.meta.coverage || null;
+    const sourceCounts = result.meta.sourceCounts || coverage?.sourceCounts || {};
+    const chips = document.createElement("div");
+    chips.className = "source-badges";
+
+    Object.entries(sourceCounts).forEach(([source, count]) => {
+        const badge = document.createElement("span");
+        badge.className = `source-badge ${sourceBadgeClass(source)}`;
+        badge.textContent = `${sourceBadgeLabel(source)}: ${count} hari`;
+        chips.appendChild(badge);
+    });
+
+    if (coverage) {
+        const badge = document.createElement("span");
+        badge.className = coverage.percent >= 95
+            ? "source-badge audit-good"
+            : "source-badge audit-warn";
+        badge.textContent = `Kelengkapan: ${coverage.available}/${coverage.expected} hari (${coverage.percent}%)`;
+        chips.appendChild(badge);
+    }
+
+    if (result.meta.reanalysisFallback) {
+        const badge = document.createElement("span");
+        badge.className = "source-badge reanalysis";
+        badge.textContent = "Reanalysis/model, bukan observasi stasiun";
+        chips.appendChild(badge);
+    }
+
+    if (chips.children.length) {
+        els.previewInfo.appendChild(chips);
+    }
+}
+
+function sourceBadgeLabel(source) {
+    const labels = {
+        meteostat_daily: "Meteostat Daily",
+        meteostat_hourly_aggregated: "Hourly Aggregated",
+        openmeteo_era5_reanalysis: "ERA5 Reanalysis",
+        nasa_power_reanalysis: "NASA POWER Reanalysis",
+    };
+    return labels[source] || source;
+}
+
+function sourceBadgeClass(source) {
+    if (source === "meteostat_daily") return "observed";
+    if (source === "meteostat_hourly_aggregated") return "aggregated";
+    if (source && source.includes("reanalysis")) return "reanalysis";
+    return "";
 }
 
 function describeResult(result) {
