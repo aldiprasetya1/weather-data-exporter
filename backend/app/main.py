@@ -17,6 +17,7 @@ import csv
 import gzip
 import io
 import json
+import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -243,6 +244,16 @@ async def daily(
 
         rows = [r for r in rows if start <= r["date"] <= end]
         rows.sort(key=lambda r: r["date"])
+        fallback_from_hourly = False
+        if not rows:
+            hourly_rows: list[dict] = []
+            for year in range(start_d.year, end_d.year + 1):
+                year_rows = await _fetch_year(client, station_id, year)
+                hourly_rows.extend(
+                    r for r in year_rows if start <= r["date"] <= end
+                )
+            rows = _aggregate_hourly_to_daily(hourly_rows)
+            fallback_from_hourly = bool(rows)
 
         # Meteostat's `tsun` field is frequently null for Indonesian stations
         # because most BMKG stations don't report calibrated sunshine duration
@@ -294,12 +305,79 @@ async def daily(
         "rows": out_rows,
         "count": len(out_rows),
         "range": {"start": start, "end": end},
+        "fallback": "hourly_aggregated" if fallback_from_hourly else None,
         "tsun_backfill": {
             "source": "open-meteo-era5",
             "dates": backfill_dates,
             "error": backfill_error,
         },
     }
+
+
+def _aggregate_hourly_to_daily(rows: list[dict]) -> list[dict]:
+    """Build daily rows when Meteostat has hourly data but no daily CSV rows."""
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        day = row.get("date")
+        if day:
+            grouped.setdefault(day, []).append(row)
+
+    out: list[dict] = []
+    for day in sorted(grouped):
+        items = grouped[day]
+        temps = _values(items, "temp")
+        prcps = _values(items, "prcp")
+        wspds = _values(items, "wspd")
+        press = _values(items, "pres")
+        tsuns = _values(items, "tsun")
+        wind_vectors = [
+            (r.get("wdir"), r.get("wspd"))
+            for r in items
+            if r.get("wdir") is not None and r.get("wspd") is not None
+        ]
+        out.append({
+            "date": day,
+            "tavg": _round_or_none(_mean(temps), 2),
+            "tmin": _round_or_none(min(temps), 2) if temps else None,
+            "tmax": _round_or_none(max(temps), 2) if temps else None,
+            "prcp": _round_or_none(sum(prcps), 2) if prcps else None,
+            "snow": None,
+            "wdir": _round_or_none(_weighted_wind_direction(wind_vectors), 0),
+            "wspd": _round_or_none(_mean(wspds), 2),
+            "wpgt": None,
+            "pres": _round_or_none(_mean(press), 2),
+            "tsun": _round_or_none(sum(tsuns), 2) if tsuns else None,
+        })
+    return out
+
+
+def _values(rows: list[dict], key: str) -> list[float]:
+    return [r[key] for r in rows if isinstance(r.get(key), (int, float))]
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _round_or_none(value: float | None, digits: int) -> float | None:
+    if value is None:
+        return None
+    return round(value, digits)
+
+
+def _weighted_wind_direction(vectors: list[tuple[float, float]]) -> float | None:
+    if not vectors:
+        return None
+    sin_sum = 0.0
+    cos_sum = 0.0
+    for degrees, speed in vectors:
+        weight = speed if speed and speed > 0 else 1.0
+        radians = math.radians(degrees)
+        sin_sum += math.sin(radians) * weight
+        cos_sum += math.cos(radians) * weight
+    if sin_sum == 0 and cos_sum == 0:
+        return None
+    return (math.degrees(math.atan2(sin_sum, cos_sum)) + 360) % 360
 
 
 async def _fetch_sunshine_backfill(
