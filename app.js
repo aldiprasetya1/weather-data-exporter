@@ -486,6 +486,8 @@ document.addEventListener("DOMContentLoaded", () => {
     els.startDate = document.getElementById("start-date");
     els.endDate = document.getElementById("end-date");
     els.timezone = document.getElementById("timezone");
+    els.fallbackSource = document.getElementById("fallback-source");
+    els.baselineBtn = document.getElementById("baseline-btn");
     els.outputMode = document.getElementById("output-mode");
     els.periodHelpOM = document.getElementById("period-help-openmeteo");
     els.periodHelpMS = document.getElementById("period-help-meteostat");
@@ -508,11 +510,8 @@ document.addEventListener("DOMContentLoaded", () => {
     els.windroseDownload = document.getElementById("windrose-download");
     els.windroseModeRadios = document.querySelectorAll('input[name="windrose-mode"]');
 
-    const today = new Date();
-    const weekAgo = new Date();
-    weekAgo.setDate(today.getDate() - 7);
-    els.startDate.value = isoDate(weekAgo);
-    els.endDate.value = isoDate(today);
+    els.startDate.value = "2016-01-01";
+    els.endDate.value = "2025-12-31";
 
     setupSourceToggle();
     setupCityAutocomplete();
@@ -520,6 +519,13 @@ document.addEventListener("DOMContentLoaded", () => {
     setupLocationTabs();
     setupMapControls();
 
+    if (els.baselineBtn) {
+        els.baselineBtn.addEventListener("click", () => {
+            els.startDate.value = "2016-01-01";
+            els.endDate.value = "2025-12-31";
+            showStatus("Baseline 2016-2025 siap dipakai.", "info");
+        });
+    }
     if (els.outputMode) {
         els.outputMode.addEventListener("change", () => {
             state.outputMode = els.outputMode.value || "daily";
@@ -1691,6 +1697,15 @@ async function fetchMeteostat({ station, startDate, endDate }) {
         return out;
     });
 
+    if (rows.length === 0 && els.fallbackSource?.value && els.fallbackSource.value !== "none") {
+        return fetchMeteostatReanalysisFallback({
+            station,
+            startDate,
+            endDate,
+            fallbackSource: els.fallbackSource.value,
+        });
+    }
+
     const dirIdx = data.columns.indexOf("wdir");
     const spdIdx = data.columns.indexOf("wspd");
     const windRows = [];
@@ -1715,7 +1730,64 @@ async function fetchMeteostat({ station, startDate, endDate }) {
             granularity: "daily",
             columns: data.columns,
             dailyFallback: data.fallback || null,
+            rowSources: data.row_sources || [],
+            sourceCounts: data.source_counts || {},
+            coverage: buildCoverage({
+                startDate,
+                endDate,
+                rows,
+                rowSources: data.row_sources || [],
+            }),
             tsunBackfill: backfill,
+        },
+    };
+}
+
+async function fetchMeteostatReanalysisFallback({ station, startDate, endDate, fallbackSource }) {
+    const location = {
+        mode: "station-fallback",
+        label: `${station.name} (fallback reanalysis/model)`,
+        points: [{
+            name: station.name,
+            latitude: station.latitude,
+            longitude: station.longitude,
+            timezone: station.timezone,
+        }],
+        bbox: null,
+        gridSize: 1,
+    };
+    const base = fallbackSource === "power"
+        ? await fetchPower({ location, startDate, endDate })
+        : await fetchOpenMeteo({
+            location,
+            startDate,
+            endDate,
+            timezone: station.timezone || "UTC",
+        });
+    const sourceName = fallbackSource === "power"
+        ? "nasa_power_reanalysis"
+        : "openmeteo_era5_reanalysis";
+    return {
+        ...base,
+        source: "meteostat",
+        meta: {
+            ...base.meta,
+            kind: "meteostat",
+            station,
+            startDate,
+            endDate,
+            granularity: "daily",
+            reanalysisFallback: fallbackSource === "power"
+                ? "NASA POWER"
+                : "Open-Meteo ERA5",
+            rowSources: base.rows.map(() => sourceName),
+            sourceCounts: { [sourceName]: base.rows.length },
+            coverage: buildCoverage({
+                startDate,
+                endDate,
+                rows: base.rows,
+                rowSources: base.rows.map(() => sourceName),
+            }),
         },
     };
 }
@@ -1892,6 +1964,53 @@ function buildMonthlyAggregation(result) {
     return { metrics, years, rowsByKey, longRows };
 }
 
+function buildCoverage({ startDate, endDate, rows, rowSources = [] }) {
+    const expectedDates = dateRangeIso(startDate, endDate);
+    const expected = expectedDates.length;
+    const dates = new Set(rows.map((row) => row[0]).filter(Boolean));
+    const available = dates.size;
+    const missingByYear = {};
+    for (const date of expectedDates) {
+        if (!dates.has(date)) {
+            const year = date.slice(0, 4);
+            missingByYear[year] = (missingByYear[year] || 0) + 1;
+        }
+    }
+    const sourceCounts = {};
+    rowSources.forEach((source) => {
+        if (!source) return;
+        sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+    });
+    return {
+        expected,
+        available,
+        percent: expected ? Number(((available / expected) * 100).toFixed(1)) : 0,
+        missingByYear,
+        sourceCounts,
+    };
+}
+
+function dateRangeIso(startDate, endDate) {
+    const out = [];
+    const cur = new Date(`${startDate}T00:00:00Z`);
+    const end = new Date(`${endDate}T00:00:00Z`);
+    while (cur <= end) {
+        out.push(cur.toISOString().slice(0, 10));
+        cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return out;
+}
+
+function describeCoverage(coverage) {
+    if (!coverage) return "";
+    const missingYears = Object.entries(coverage.missingByYear || {})
+        .map(([year, days]) => `${year} (${days} hari)`)
+        .join(", ");
+    const missingText = missingYears || "tidak ada";
+    return `Kelengkapan data: ${coverage.available}/${coverage.expected} hari ` +
+        `(${coverage.percent}%). Tahun bolong: ${missingText}.`;
+}
+
 function toNumber(value) {
     if (value == null || value === "") return null;
     const num = Number(value);
@@ -1973,6 +2092,12 @@ function describeResult(result) {
         const fallbackNote = result.meta.dailyFallback === "hourly_aggregated"
             ? " - Data harian dibentuk dari agregasi hourly Meteostat"
             : "";
+        const reanalysisNote = result.meta.reanalysisFallback
+            ? ` - Fallback: ${result.meta.reanalysisFallback} (reanalysis/model, bukan observasi stasiun)`
+            : "";
+        const coverageNote = result.meta.coverage
+            ? ` - ${describeCoverage(result.meta.coverage)}`
+            : "";
         return (
             `Stasiun: ${s.name} (WMO ${wmo}` +
             (s.icao ? ` / ${s.icao}` : "") +
@@ -1981,6 +2106,8 @@ function describeResult(result) {
             ` - Output: ${outputLabel}` +
             ` - Total baris: ${result.rows.length}` +
             fallbackNote +
+            reanalysisNote +
+            coverageNote +
             bfNote
         );
     }
@@ -2215,6 +2342,16 @@ function buildMetaRows(result) {
         if (bf.error) {
             sunshineNote += ` Backfill gagal sebagian: ${bf.error}.`;
         }
+        const coverage = result.meta.coverage;
+        const sourceCounts = result.meta.sourceCounts || coverage?.sourceCounts || {};
+        const sourceSummary = Object.entries(sourceCounts)
+            .map(([source, count]) => `${source}: ${count}`)
+            .join(" | ");
+        const missingYears = coverage
+            ? Object.entries(coverage.missingByYear || {})
+                .map(([year, days]) => `${year}: ${days} hari`)
+                .join(" | ") || "tidak ada"
+            : "";
         return [
             ["Field", "Value"],
             ["Sumber", "Meteostat (NOAA ISD / SYNOP via bulk.meteostat.net)"],
@@ -2231,9 +2368,14 @@ function buildMetaRows(result) {
             ["Granularitas", "daily"],
             ["Satuan kecepatan angin", "m/s"],
             ["Variabel", variableList],
+            ["Kelengkapan data", coverage ? `${coverage.available}/${coverage.expected} hari (${coverage.percent}%)` : ""],
+            ["Tahun bolong", missingYears],
+            ["Sumber per baris", sourceSummary],
             [
                 "Catatan data harian",
-                result.meta.dailyFallback === "hourly_aggregated"
+                result.meta.reanalysisFallback
+                    ? `${result.meta.reanalysisFallback} dipakai sebagai fallback reanalysis/model, bukan observasi stasiun.`
+                    : result.meta.dailyFallback === "hourly_aggregated"
                     ? "File daily Meteostat kosong untuk periode ini; data harian dibentuk dari agregasi hourly Meteostat."
                     : "Data berasal dari file daily Meteostat.",
             ],
