@@ -2469,20 +2469,13 @@ function renderClimateChart(result, scroll = false) {
         els.climateChart.appendChild(card);
 
         const traces = metric.series.map((series, seriesIndex) => ({
-            type: metric.chartType,
-            mode: metric.chartType === "scatter" ? "lines+markers" : undefined,
+            type: "bar",
             x: MONTH_LABELS,
             y: series.values,
             name: String(series.year),
             marker: {
-                color: metric.chartType === "bar"
-                    ? chartPalette(seriesIndex, theme, 0.72)
-                    : chartPalette(seriesIndex, theme, 1),
-                size: metric.chartType === "scatter" ? 6 : undefined,
+                color: chartPalette(seriesIndex, theme, 0.78),
             },
-            line: metric.chartType === "scatter"
-                ? { color: chartPalette(seriesIndex, theme, 1), width: 2 }
-                : undefined,
             hovertemplate: `%{x} ${series.year}<br>${metric.title}: %{y:.2f} ${metric.unit}<extra></extra>`,
         }));
 
@@ -2538,7 +2531,7 @@ function buildClimateChartData(result) {
             unit: "deg C",
             pattern: /suhu rata-rata/i,
             aggregation: "mean",
-            chartType: "scatter",
+            chartType: "bar",
         },
         {
             id: "curah-hujan",
@@ -2554,7 +2547,7 @@ function buildClimateChartData(result) {
             unit: "m/s",
             pattern: /kecepatan angin/i,
             aggregation: "mean",
-            chartType: "scatter",
+            chartType: "bar",
         },
         {
             id: "arah-angin",
@@ -2562,7 +2555,7 @@ function buildClimateChartData(result) {
             unit: "deg",
             pattern: /arah angin/i,
             aggregation: "circular",
-            chartType: "scatter",
+            chartType: "bar",
         },
         {
             id: "penyinaran",
