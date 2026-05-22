@@ -24,6 +24,7 @@ const POWER_FILL = -999.0;
 
 const TOKEN_STORAGE_KEY = "wde.auth.token";
 const PROFILE_STORAGE_KEY = "wde.auth.profile";
+const THEME_STORAGE_KEY = "wde.theme";
 
 // Open-Meteo hourly variables fetched on every request. Wind speeds come back
 // in m/s thanks to the `wind_speed_unit=ms` query parameter. The hourly values
@@ -440,6 +441,8 @@ function renderAdminTokens(tokens) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    setupThemeToggle();
+
     if (IS_ADMIN_PAGE) {
         showAdminView();
         setupAdminTokenControls();
@@ -556,6 +559,59 @@ document.addEventListener("DOMContentLoaded", () => {
         })
     );
 });
+
+function setupThemeToggle() {
+    const btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    const initial = saved === "light" || saved === "dark" ? saved : "dark";
+    applyTheme(initial);
+    btn.addEventListener("click", () => {
+        const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        applyTheme(next);
+        if (state.lastResult) {
+            if (els.climateChartSection && !els.climateChartSection.hidden) {
+                renderClimateChart(state.lastResult, false);
+            }
+            if (els.windroseSection && !els.windroseSection.hidden) showWindrose();
+        }
+    });
+}
+
+function applyTheme(theme) {
+    const value = theme === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = value;
+    localStorage.setItem(THEME_STORAGE_KEY, value);
+    const btn = document.getElementById("theme-toggle");
+    const label = document.getElementById("theme-label");
+    const icon = btn?.querySelector(".theme-icon");
+    if (btn) btn.setAttribute("aria-pressed", value === "light" ? "true" : "false");
+    if (label) label.textContent = value === "light" ? "Terang" : "Gelap";
+    if (icon) icon.textContent = value === "light" ? "☼" : "☾";
+}
+
+function currentChartTheme() {
+    const light = document.documentElement.dataset.theme === "light";
+    return light
+        ? {
+            text: "#0f172a",
+            paper: "#ffffff",
+            plot: "#ffffff",
+            grid: "#e2e8f0",
+            axis: "#64748b",
+            accent: "#0f766e",
+            line: "#1e3a8a",
+        }
+        : {
+            text: "#fafafa",
+            paper: "rgba(24, 24, 27, 0)",
+            plot: "rgba(15, 15, 17, 0.35)",
+            grid: "rgba(255, 255, 255, 0.10)",
+            axis: "#a1a1aa",
+            accent: "#10b981",
+            line: "#60a5fa",
+        };
+}
 
 function isoDate(d) {
     const yyyy = d.getFullYear();
@@ -2230,6 +2286,7 @@ function renderClimateChart(result, scroll = false) {
         if (scroll) showStatus("Data belum cukup untuk membuat grafik bulanan.", "error");
         return;
     }
+    const theme = currentChartTheme();
 
     const traces = [
         {
@@ -2237,7 +2294,7 @@ function renderClimateChart(result, scroll = false) {
             x: chart.months,
             y: chart.precip,
             name: "Curah hujan (mm)",
-            marker: { color: "#0f766e" },
+            marker: { color: theme.accent },
             yaxis: "y",
             hovertemplate: "%{x}<br>Curah hujan: %{y:.2f} mm<extra></extra>",
         },
@@ -2247,7 +2304,7 @@ function renderClimateChart(result, scroll = false) {
             x: chart.months,
             y: chart.temp,
             name: "Suhu rata-rata (deg C)",
-            line: { color: "#1e3a8a", width: 2 },
+            line: { color: theme.line, width: 2 },
             marker: { size: 5 },
             yaxis: "y2",
             hovertemplate: "%{x}<br>Suhu: %{y:.2f} deg C<extra></extra>",
@@ -2257,28 +2314,35 @@ function renderClimateChart(result, scroll = false) {
     const title = `Grafik rona awal - ${chart.label}`;
     const layout = {
         title: { text: title, font: { size: 15 } },
-        font: { family: "system-ui, sans-serif", color: "#0f172a" },
+        font: { family: "Inter, system-ui, sans-serif", color: theme.text },
         barmode: "group",
         xaxis: {
             title: "Bulan",
             tickangle: chart.months.length > 24 ? -45 : 0,
             automargin: true,
+            gridcolor: theme.grid,
+            linecolor: theme.axis,
+            tickfont: { color: theme.axis },
         },
         yaxis: {
             title: "Curah hujan (mm)",
             rangemode: "tozero",
-            gridcolor: "#e2e8f0",
+            gridcolor: theme.grid,
+            linecolor: theme.axis,
+            tickfont: { color: theme.axis },
         },
         yaxis2: {
             title: "Suhu rata-rata (deg C)",
             overlaying: "y",
             side: "right",
             showgrid: false,
+            linecolor: theme.axis,
+            tickfont: { color: theme.axis },
         },
         legend: { orientation: "h", y: -0.25 },
         margin: { t: 60, r: 70, b: 110, l: 70 },
-        paper_bgcolor: "white",
-        plot_bgcolor: "white",
+        paper_bgcolor: theme.paper,
+        plot_bgcolor: theme.plot,
     };
 
     Plotly.newPlot(els.climateChart, traces, layout, {
@@ -2720,24 +2784,32 @@ function showWindrose() {
             "%{r:.2f}% of obs<extra></extra>",
     }));
 
+    const theme = currentChartTheme();
     const layout = {
         title: {
             text: windroseTitle(result, mode),
             font: { size: 14 },
         },
-        font: { family: "system-ui, sans-serif" },
+        font: { family: "Inter, system-ui, sans-serif", color: theme.text },
+        paper_bgcolor: theme.paper,
+        plot_bgcolor: theme.plot,
         polar: {
+            bgcolor: theme.plot,
             barmode: "stack",
             bargap: 0,
             radialaxis: {
                 ticksuffix: "%",
                 angle: 45,
-                tickfont: { size: 11 },
+                gridcolor: theme.grid,
+                linecolor: theme.axis,
+                tickfont: { size: 11, color: theme.axis },
             },
             angularaxis: {
                 direction: "clockwise",
                 rotation: 90, // N at top
-                tickfont: { size: 12 },
+                gridcolor: theme.grid,
+                linecolor: theme.axis,
+                tickfont: { size: 12, color: theme.axis },
             },
         },
         legend: {
