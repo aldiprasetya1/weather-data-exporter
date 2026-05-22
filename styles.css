@@ -1175,3 +1175,217 @@ tr:nth-child(even) {
 footer {
     color: #71717a;
 }
+
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 6px 11px;
+    color: #fafafa;
+    background: rgba(39, 39, 42, 0.80);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.theme-icon {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.14);
+    border-radius: 999px;
+}
+
+html[data-theme="light"] {
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #64748b;
+    --primary: #0f766e;
+    --primary-hover: #115e59;
+    --accent: #14b8a6;
+    --navy: #0f172a;
+    --panel: #f1f5f9;
+    --border: #dbe3ea;
+    --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] body {
+    color: #0f172a;
+    background:
+        radial-gradient(circle at 50% -12%, rgba(20, 184, 166, 0.16), rgba(248, 250, 252, 0) 42%),
+        linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+        #f8fafc;
+    background-size: auto, 40px 40px, 40px 40px, auto;
+}
+
+html[data-theme="light"] header {
+    border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] header h1 {
+    color: #0f172a;
+    text-shadow: none;
+}
+
+html[data-theme="light"] .subtitle,
+html[data-theme="light"] .muted {
+    color: #64748b;
+}
+
+html[data-theme="light"] .subtitle a,
+html[data-theme="light"] footer a,
+html[data-theme="light"] .link-button {
+    color: #0f766e;
+}
+
+html[data-theme="light"] .card,
+html[data-theme="light"] .workflow-sidebar,
+html[data-theme="light"] .login-card,
+html[data-theme="light"] main#app-view .workflow-sidebar {
+    color: #0f172a !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+    border-color: #dbe3ea !important;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme="light"] .workflow-kicker,
+html[data-theme="light"] main#app-view .workflow-kicker {
+    color: #0f766e !important;
+}
+
+html[data-theme="light"] .workflow-sidebar h2,
+html[data-theme="light"] .card h2,
+html[data-theme="light"] main#app-view .workflow-sidebar h2,
+html[data-theme="light"] main#app-view .workflow-steps strong,
+html[data-theme="light"] main#app-view .sidebar-panel strong {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .workflow-steps small,
+html[data-theme="light"] main#app-view .workflow-steps small,
+html[data-theme="light"] main#app-view .sidebar-panel p {
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .workflow-steps li > span {
+    color: #0f766e;
+    background: #ecfdf5;
+    border-color: #99f6e4;
+}
+
+html[data-theme="light"] .sidebar-panel,
+html[data-theme="light"] main#app-view .sidebar-panel,
+html[data-theme="light"] #preview-info,
+html[data-theme="light"] .source-badge {
+    color: #334155;
+    background: #f8fafc !important;
+    border-color: #dbe3ea !important;
+}
+
+html[data-theme="light"] .field label {
+    color: #334155;
+}
+
+html[data-theme="light"] .field input,
+html[data-theme="light"] .field select,
+html[data-theme="light"] select#station-select,
+html[data-theme="light"] .suggestions,
+html[data-theme="light"] .radio,
+html[data-theme="light"] .radio-inline,
+html[data-theme="light"] .table-wrap {
+    color: #0f172a;
+    background: #ffffff;
+    border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .field input::placeholder {
+    color: #94a3b8;
+}
+
+html[data-theme="light"] .suggestions li:hover,
+html[data-theme="light"] .suggestions li.active,
+html[data-theme="light"] .radio:has(input:checked),
+html[data-theme="light"] .radio-inline:has(input:checked) {
+    color: #0f766e;
+    background: #ecfdf5;
+    border-color: #0f766e;
+}
+
+html[data-theme="light"] .tabs {
+    border-color: #dbe3ea;
+}
+
+html[data-theme="light"] .tab {
+    color: #64748b;
+}
+
+html[data-theme="light"] .tab:hover,
+html[data-theme="light"] .tab.active {
+    color: #0f766e;
+    border-bottom-color: #0f766e;
+}
+
+html[data-theme="light"] button,
+html[data-theme="light"] .theme-toggle {
+    color: #0f172a;
+    background: #ffffff;
+    border-color: #cbd5e1;
+}
+
+html[data-theme="light"] button:hover {
+    background: #f1f5f9;
+}
+
+html[data-theme="light"] button.primary {
+    color: #ffffff;
+    background: #0f766e;
+    border-color: #0f766e;
+    box-shadow: 0 10px 22px rgba(15, 118, 110, 0.18);
+}
+
+html[data-theme="light"] #baseline-btn {
+    color: #0f766e;
+    background: #ecfdf5;
+    border-color: #99f6e4;
+}
+
+html[data-theme="light"] .theme-icon {
+    color: #0f766e;
+    background: #ecfdf5;
+}
+
+html[data-theme="light"] .status.info,
+html[data-theme="light"] .status.success,
+html[data-theme="light"] .status.loading,
+html[data-theme="light"] .status.error {
+    background: #ffffff;
+    border-color: #dbe3ea;
+}
+
+html[data-theme="light"] .status.info { color: #164e63; }
+html[data-theme="light"] .status.success { color: #065f46; }
+html[data-theme="light"] .status.loading { color: #92400e; }
+html[data-theme="light"] .status.error { color: #991b1b; }
+
+html[data-theme="light"] th {
+    color: #0f172a;
+    background: #eaf1f7;
+}
+
+html[data-theme="light"] td {
+    color: #1e293b;
+}
+
+html[data-theme="light"] tr:nth-child(even) {
+    background: #f8fafc;
+}
+
+html[data-theme="light"] footer {
+    color: #64748b;
+}
