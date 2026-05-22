@@ -481,6 +481,12 @@ document.addEventListener("DOMContentLoaded", () => {
     els.selectedCity = document.getElementById("selected-city");
     els.selectedLocation = document.getElementById("selected-location");
     els.mapCanvas = document.getElementById("map-canvas");
+    els.coordinateFormat = document.getElementById("coordinate-format");
+    els.coordDecimal = document.getElementById("coord-decimal");
+    els.coordDms = document.getElementById("coord-dms");
+    els.coordUtm = document.getElementById("coord-utm");
+    els.coordApplyBtn = document.getElementById("coord-apply-btn");
+    els.coordStatus = document.getElementById("coord-status");
     els.citySection = document.getElementById("city-section");
     els.stationSection = document.getElementById("station-section");
     els.stationSearch = document.getElementById("station-search");
@@ -526,6 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setupStationPicker();
     setupLocationTabs();
     setupMapControls();
+    setupCoordinateInput();
 
     if (els.baselineBtn) {
         els.baselineBtn.addEventListener("click", () => {
@@ -928,6 +935,145 @@ function setupMapControls() {
     if (clearBtn) {
         clearBtn.addEventListener('click', () => clearMapSelection());
     }
+}
+
+function setupCoordinateInput() {
+    if (!els.coordinateFormat || !els.coordApplyBtn) return;
+    const refresh = () => {
+        const format = els.coordinateFormat.value || "decimal";
+        if (els.coordDecimal) els.coordDecimal.hidden = format !== "decimal";
+        if (els.coordDms) els.coordDms.hidden = format !== "dms";
+        if (els.coordUtm) els.coordUtm.hidden = format !== "utm";
+        if (els.coordStatus) els.coordStatus.textContent = "";
+    };
+    els.coordinateFormat.addEventListener("change", refresh);
+    els.coordApplyBtn.addEventListener("click", applyManualCoordinate);
+    refresh();
+}
+
+function applyManualCoordinate() {
+    try {
+        const format = els.coordinateFormat?.value || "decimal";
+        const point = format === "dms"
+            ? coordinateFromDms()
+            : format === "utm"
+                ? coordinateFromUtm()
+                : coordinateFromDecimal();
+        validateLatLon(point);
+        ensureMap();
+        setTimeout(() => {
+            setPin(point.lat, point.lon);
+            if (state.map) state.map.setView([point.lat, point.lon], 16);
+            if (els.coordStatus) {
+                els.coordStatus.textContent =
+                    `Koordinat diterapkan: ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}.`;
+            }
+        }, state.map ? 0 : 250);
+    } catch (err) {
+        if (els.coordStatus) els.coordStatus.textContent = err.message || "Koordinat tidak valid.";
+        showStatus(err.message || "Koordinat tidak valid.", "error");
+    }
+}
+
+function coordinateFromDecimal() {
+    const lat = numberFromInput("coord-lat", "Lintang wajib diisi.");
+    const lon = numberFromInput("coord-lon", "Bujur wajib diisi.");
+    return { lat, lon };
+}
+
+function coordinateFromDms() {
+    const lat = dmsToDecimal(
+        numberFromInput("coord-lat-deg", "Derajat lintang wajib diisi."),
+        numberFromInput("coord-lat-min", "Menit lintang wajib diisi."),
+        numberFromInput("coord-lat-sec", "Detik lintang wajib diisi."),
+        document.getElementById("coord-lat-hemi")?.value || "S"
+    );
+    const lon = dmsToDecimal(
+        numberFromInput("coord-lon-deg", "Derajat bujur wajib diisi."),
+        numberFromInput("coord-lon-min", "Menit bujur wajib diisi."),
+        numberFromInput("coord-lon-sec", "Detik bujur wajib diisi."),
+        document.getElementById("coord-lon-hemi")?.value || "E"
+    );
+    return { lat, lon };
+}
+
+function coordinateFromUtm() {
+    const zone = numberFromInput("coord-utm-zone", "Zona UTM wajib diisi.");
+    const easting = numberFromInput("coord-utm-easting", "Easting wajib diisi.");
+    const northing = numberFromInput("coord-utm-northing", "Northing wajib diisi.");
+    const hemi = document.getElementById("coord-utm-hemi")?.value || "S";
+    return utmToLatLon(easting, northing, zone, hemi);
+}
+
+function numberFromInput(id, message) {
+    const raw = document.getElementById(id)?.value;
+    const value = Number(String(raw || "").replace(",", "."));
+    if (!Number.isFinite(value)) throw new Error(message);
+    return value;
+}
+
+function validateLatLon(latlon) {
+    if (!latlon || !Number.isFinite(latlon.lat) || !Number.isFinite(latlon.lon)) {
+        throw new Error("Koordinat tidak valid.");
+    }
+    if (latlon.lat < -90 || latlon.lat > 90) {
+        throw new Error("Lintang harus berada antara -90 sampai 90.");
+    }
+    if (latlon.lon < -180 || latlon.lon > 180) {
+        throw new Error("Bujur harus berada antara -180 sampai 180.");
+    }
+}
+
+function dmsToDecimal(degrees, minutes, seconds, hemisphere) {
+    if (minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) {
+        throw new Error("Nilai menit dan detik DMS harus berada antara 0 sampai kurang dari 60.");
+    }
+    const sign = /S|W/i.test(hemisphere) ? -1 : 1;
+    return sign * (Math.abs(degrees) + minutes / 60 + seconds / 3600);
+}
+
+function utmToLatLon(easting, northing, zone, hemisphere) {
+    if (zone < 1 || zone > 60) throw new Error("Zona UTM harus berada antara 1 sampai 60.");
+    const a = 6378137.0;
+    const eccSquared = 0.00669438;
+    const k0 = 0.9996;
+    const eccPrimeSquared = eccSquared / (1 - eccSquared);
+    const e1 = (1 - Math.sqrt(1 - eccSquared)) / (1 + Math.sqrt(1 - eccSquared));
+
+    const x = easting - 500000.0;
+    let y = northing;
+    if (String(hemisphere).toUpperCase() === "S") y -= 10000000.0;
+
+    const longOrigin = (zone - 1) * 6 - 180 + 3;
+    const m = y / k0;
+    const mu = m / (a * (1 - eccSquared / 4 - (3 * eccSquared ** 2) / 64 - (5 * eccSquared ** 3) / 256));
+    const phi1Rad = mu
+        + ((3 * e1) / 2 - (27 * e1 ** 3) / 32) * Math.sin(2 * mu)
+        + ((21 * e1 ** 2) / 16 - (55 * e1 ** 4) / 32) * Math.sin(4 * mu)
+        + ((151 * e1 ** 3) / 96) * Math.sin(6 * mu)
+        + ((1097 * e1 ** 4) / 512) * Math.sin(8 * mu);
+
+    const n1 = a / Math.sqrt(1 - eccSquared * Math.sin(phi1Rad) ** 2);
+    const t1 = Math.tan(phi1Rad) ** 2;
+    const c1 = eccPrimeSquared * Math.cos(phi1Rad) ** 2;
+    const r1 = a * (1 - eccSquared) / ((1 - eccSquared * Math.sin(phi1Rad) ** 2) ** 1.5);
+    const d = x / (n1 * k0);
+
+    const latRad = phi1Rad - (n1 * Math.tan(phi1Rad) / r1) * (
+        (d ** 2) / 2
+        - (5 + 3 * t1 + 10 * c1 - 4 * c1 ** 2 - 9 * eccPrimeSquared) * (d ** 4) / 24
+        + (61 + 90 * t1 + 298 * c1 + 45 * t1 ** 2 - 252 * eccPrimeSquared - 3 * c1 ** 2) * (d ** 6) / 720
+    );
+    const lonRad = (
+        d
+        - (1 + 2 * t1 + c1) * (d ** 3) / 6
+        + (5 - 2 * c1 + 28 * t1 - 3 * c1 ** 2 + 8 * eccPrimeSquared + 24 * t1 ** 2) * (d ** 5) / 120
+    ) / Math.cos(phi1Rad);
+
+    return {
+        lat: latRad * 180 / Math.PI,
+        lon: longOrigin + lonRad * 180 / Math.PI,
+    };
 }
 
 function ensureMap() {
@@ -2282,108 +2428,208 @@ function showClimateChart() {
 function renderClimateChart(result, scroll = false) {
     if (!result || !result.rows || result.rows.length === 0 || !els.climateChart) return;
     const chart = buildClimateChartData(result);
-    if (!chart.months.length) {
+    if (!chart.metrics.length) {
         if (scroll) showStatus("Data belum cukup untuk membuat grafik bulanan.", "error");
         return;
     }
     const theme = currentChartTheme();
 
-    const traces = [
-        {
-            type: "bar",
-            x: chart.months,
-            y: chart.precip,
-            name: "Curah hujan (mm)",
-            marker: { color: theme.accent },
-            yaxis: "y",
-            hovertemplate: "%{x}<br>Curah hujan: %{y:.2f} mm<extra></extra>",
-        },
-        {
-            type: "scatter",
-            mode: "lines+markers",
-            x: chart.months,
-            y: chart.temp,
-            name: "Suhu rata-rata (deg C)",
-            line: { color: theme.line, width: 2 },
-            marker: { size: 5 },
-            yaxis: "y2",
-            hovertemplate: "%{x}<br>Suhu: %{y:.2f} deg C<extra></extra>",
-        },
-    ];
+    els.climateChart.innerHTML = "";
+    els.climateChart.classList.add("climate-chart-grid");
+    chart.metrics.forEach((metric, metricIndex) => {
+        const card = document.createElement("div");
+        card.className = "climate-chart-card";
+        const header = document.createElement("div");
+        header.className = "climate-chart-card-header";
+        const title = document.createElement("h3");
+        title.textContent = metric.title;
+        const download = document.createElement("button");
+        download.type = "button";
+        download.textContent = "Unduh PNG";
+        header.appendChild(title);
+        header.appendChild(download);
+        const plot = document.createElement("div");
+        plot.className = "climate-plot";
+        plot.id = `climate-plot-${metric.id}`;
+        card.appendChild(header);
+        card.appendChild(plot);
+        els.climateChart.appendChild(card);
 
-    const title = `Grafik rona awal - ${chart.label}`;
-    const layout = {
-        title: { text: title, font: { size: 15 } },
-        font: { family: "Inter, system-ui, sans-serif", color: theme.text },
-        barmode: "group",
-        xaxis: {
-            title: "Bulan",
-            tickangle: chart.months.length > 24 ? -45 : 0,
-            automargin: true,
-            gridcolor: theme.grid,
-            linecolor: theme.axis,
-            tickfont: { color: theme.axis },
-        },
-        yaxis: {
-            title: "Curah hujan (mm)",
-            rangemode: "tozero",
-            gridcolor: theme.grid,
-            linecolor: theme.axis,
-            tickfont: { color: theme.axis },
-        },
-        yaxis2: {
-            title: "Suhu rata-rata (deg C)",
-            overlaying: "y",
-            side: "right",
-            showgrid: false,
-            linecolor: theme.axis,
-            tickfont: { color: theme.axis },
-        },
-        legend: { orientation: "h", y: -0.25 },
-        margin: { t: 60, r: 70, b: 110, l: 70 },
-        paper_bgcolor: theme.paper,
-        plot_bgcolor: theme.plot,
-    };
+        const traces = metric.series.map((series, seriesIndex) => ({
+            type: metric.chartType,
+            mode: metric.chartType === "scatter" ? "lines+markers" : undefined,
+            x: MONTH_LABELS,
+            y: series.values,
+            name: String(series.year),
+            marker: {
+                color: metric.chartType === "bar"
+                    ? chartPalette(seriesIndex, theme, 0.72)
+                    : chartPalette(seriesIndex, theme, 1),
+                size: metric.chartType === "scatter" ? 6 : undefined,
+            },
+            line: metric.chartType === "scatter"
+                ? { color: chartPalette(seriesIndex, theme, 1), width: 2 }
+                : undefined,
+            hovertemplate: `%{x} ${series.year}<br>${metric.title}: %{y:.2f} ${metric.unit}<extra></extra>`,
+        }));
 
-    Plotly.newPlot(els.climateChart, traces, layout, {
-        responsive: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ["lasso2d", "select2d"],
+        const layout = {
+            title: {
+                text: `${metric.title} - ${chart.label}`,
+                font: { size: 14 },
+            },
+            font: { family: "Inter, system-ui, sans-serif", color: theme.text },
+            barmode: "group",
+            xaxis: {
+                title: "Bulan",
+                gridcolor: theme.grid,
+                linecolor: theme.axis,
+                tickfont: { color: theme.axis },
+            },
+            yaxis: {
+                title: metric.unit ? `${metric.title} (${metric.unit})` : metric.title,
+                rangemode: metric.allowNegative ? "normal" : "tozero",
+                gridcolor: theme.grid,
+                linecolor: theme.axis,
+                tickfont: { color: theme.axis },
+            },
+            legend: { orientation: "h", y: -0.24 },
+            margin: { t: 58, r: 30, b: 92, l: 62 },
+            paper_bgcolor: theme.paper,
+            plot_bgcolor: theme.plot,
+        };
+
+        Plotly.newPlot(plot, traces, layout, {
+            responsive: true,
+            displaylogo: false,
+            modeBarButtonsToRemove: ["lasso2d", "select2d"],
+        });
+        download.addEventListener("click", () =>
+            downloadClimatePlot(plot, result, metric, metricIndex)
+        );
     });
 
     els.climateChartSection.hidden = false;
     els.climateChartInfo.textContent =
-        "Grafik bulanan dari data harian: curah hujan dihitung sebagai total per bulan, " +
-        "suhu dihitung sebagai rata-rata harian per bulan.";
+        "Grafik dipisah per parameter. Setiap grafik menampilkan bulan Januari-Desember dengan seri per tahun sesuai rentang yang dipilih.";
     if (scroll) {
         els.climateChartSection.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 }
 
 function buildClimateChartData(result) {
-    const tempIdx = result.headers.findIndex((h) => /suhu rata-rata/i.test(h));
-    const precipIdx = result.headers.findIndex((h) => /curah hujan|presipitasi/i.test(h));
-    const buckets = new Map();
+    const definitions = [
+        {
+            id: "suhu",
+            title: "Suhu rata-rata",
+            unit: "deg C",
+            pattern: /suhu rata-rata/i,
+            aggregation: "mean",
+            chartType: "scatter",
+        },
+        {
+            id: "curah-hujan",
+            title: "Curah hujan",
+            unit: "mm",
+            pattern: /curah hujan|presipitasi/i,
+            aggregation: "sum",
+            chartType: "bar",
+        },
+        {
+            id: "kecepatan-angin",
+            title: "Kecepatan angin rata-rata",
+            unit: "m/s",
+            pattern: /kecepatan angin/i,
+            aggregation: "mean",
+            chartType: "scatter",
+        },
+        {
+            id: "arah-angin",
+            title: "Arah angin dominan",
+            unit: "deg",
+            pattern: /arah angin/i,
+            aggregation: "circular",
+            chartType: "scatter",
+        },
+        {
+            id: "penyinaran",
+            title: "Lama penyinaran matahari",
+            unit: "jam",
+            pattern: /lama penyinaran|radiasi ghi/i,
+            aggregation: "sum",
+            chartType: "bar",
+        },
+    ].map((def) => ({ ...def, index: result.headers.findIndex((h) => def.pattern.test(h)) }))
+        .filter((def) => def.index >= 0);
+
+    const buckets = new Map(); // metric id -> year -> month index -> values
+    definitions.forEach((def) => buckets.set(def.id, new Map()));
     for (const row of result.rows) {
         const date = String(row[0] || "");
         if (!/^\d{4}-\d{2}-\d{2}/.test(date)) continue;
-        const key = date.slice(0, 7);
-        if (!buckets.has(key)) {
-            buckets.set(key, { temp: [], precip: [] });
-        }
-        const bucket = buckets.get(key);
-        const temp = tempIdx >= 0 ? toNumber(row[tempIdx]) : null;
-        const precip = precipIdx >= 0 ? toNumber(row[precipIdx]) : null;
-        if (temp != null) bucket.temp.push(temp);
-        if (precip != null) bucket.precip.push(precip);
+        const year = Number(date.slice(0, 4));
+        const month = Number(date.slice(5, 7)) - 1;
+        if (!Number.isFinite(year) || month < 0 || month > 11) continue;
+        definitions.forEach((def) => {
+            const value = toNumber(row[def.index]);
+            if (value == null) return;
+            const byYear = buckets.get(def.id);
+            if (!byYear.has(year)) byYear.set(year, Array.from({ length: 12 }, () => []));
+            byYear.get(year)[month].push(value);
+        });
     }
-    const keys = Array.from(buckets.keys()).sort();
+    const metrics = definitions.map((def) => {
+        const byYear = buckets.get(def.id);
+        const years = Array.from(byYear.keys()).sort((a, b) => a - b);
+        return {
+            ...def,
+            series: years.map((year) => ({
+                year,
+                values: byYear.get(year).map((values) => aggregateChartValues(values, def.aggregation)),
+            })),
+        };
+    }).filter((metric) => metric.series.length);
+
     return {
         label: chartLocationLabel(result),
-        months: keys,
-        temp: keys.map((key) => roundChart(mean(buckets.get(key).temp))),
-        precip: keys.map((key) => roundChart(sumValues(buckets.get(key).precip))),
+        metrics,
     };
+}
+
+function aggregateChartValues(values, aggregation) {
+    if (!values || !values.length) return null;
+    if (aggregation === "sum") return roundChart(sumValues(values));
+    if (aggregation === "circular") return roundChart(circularMean(values));
+    return roundChart(mean(values));
+}
+
+function circularMean(values) {
+    if (!values || !values.length) return null;
+    let sin = 0;
+    let cos = 0;
+    values.forEach((value) => {
+        const rad = value * Math.PI / 180;
+        sin += Math.sin(rad);
+        cos += Math.cos(rad);
+    });
+    const angle = Math.atan2(sin / values.length, cos / values.length) * 180 / Math.PI;
+    return (angle + 360) % 360;
+}
+
+function chartPalette(index, theme, opacity = 1) {
+    const dark = ["#10b981", "#60a5fa", "#fbbf24", "#c084fc", "#f87171", "#22d3ee", "#a3e635", "#fb7185"];
+    const light = ["#0f766e", "#2563eb", "#d97706", "#7c3aed", "#dc2626", "#0891b2", "#65a30d", "#be123c"];
+    const hex = (document.documentElement.dataset.theme === "light" ? light : dark)[index % dark.length];
+    if (opacity >= 1) return hex;
+    return hexToRgba(hex, opacity);
+}
+
+function hexToRgba(hex, opacity) {
+    const clean = hex.replace("#", "");
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
 function sumValues(values) {
@@ -2409,11 +2655,24 @@ function downloadClimateChartPNG() {
         showStatus("Tampilkan grafik dulu sebelum unduh.", "error");
         return;
     }
+    const plots = Array.from(els.climateChart.querySelectorAll(".climate-plot"));
+    if (!plots.length) {
+        showStatus("Tidak ada grafik yang bisa diunduh.", "error");
+        return;
+    }
+    const chart = buildClimateChartData(state.lastResult);
+    plots.forEach((plot, index) => {
+        const metric = chart.metrics[index] || { id: `grafik-${index + 1}` };
+        setTimeout(() => downloadClimatePlot(plot, state.lastResult, metric, index), index * 350);
+    });
+}
+
+function downloadClimatePlot(plot, result, metric, index = 0) {
     const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
     const filename =
-        `grafik_rona_awal_${safe(chartLocationLabel(state.lastResult))}_` +
-        `${state.lastResult.meta.startDate}_to_${state.lastResult.meta.endDate}`;
-    Plotly.downloadImage(els.climateChart, {
+        `grafik_rona_awal_${safe(metric.id || `parameter_${index + 1}`)}_${safe(chartLocationLabel(result))}_` +
+        `${result.meta.startDate}_to_${result.meta.endDate}`;
+    Plotly.downloadImage(plot, {
         format: "png",
         width: 1100,
         height: 700,
@@ -2827,8 +3086,8 @@ function showWindrose() {
     });
 
     els.windroseSection.hidden = false;
-    const modeLabel = mode === "to" ? "Blowing TO (arah hembusan)"
-        : "Blowing FROM (asal angin, konvensi meteorologi)";
+    const modeLabel = mode === "to" ? "Blowing To (arah hembusan)"
+        : "Blowing From (asal angin, konvensi meteorologi)";
     els.windroseInfo.textContent =
         `Mode: ${modeLabel}. ` +
         `Total observasi: ${total} (calm <= 0.5 m/s: ${calmCount} = ` +
@@ -2838,7 +3097,7 @@ function showWindrose() {
 }
 
 function windroseTitle(result, mode) {
-    const tag = mode === "to" ? "Blowing TO" : "Blowing FROM";
+    const tag = mode === "to" ? "Blowing To" : "Blowing From";
     if (result.source === "meteostat") {
         const s = result.meta.station;
         return (
