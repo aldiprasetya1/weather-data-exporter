@@ -4,7 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin - Angin Berhembus</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20260522-admin-theme-login" />
+    <script>
+        (() => {
+            const saved = localStorage.getItem("wde.theme");
+            const theme = saved === "light" || saved === "dark" ? saved : "dark";
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
     <link rel="icon" type="image/png" sizes="128x128" href="assets/favicon.png" />
     <link rel="apple-touch-icon" href="assets/favicon.png" />
@@ -23,6 +33,10 @@
         </div>
         <div class="auth-bar">
             <span class="muted">Halaman admin terpisah</span>
+            <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Ganti tema" aria-pressed="false">
+                <span class="theme-icon" aria-hidden="true">☾</span>
+                <span id="theme-label">Gelap</span>
+            </button>
             <a class="link-button" href="/">Kembali ke aplikasi</a>
         </div>
     </header>
@@ -119,6 +133,6 @@
     </footer>
 
     <script src="config.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260522-admin-theme-login"></script>
 </body>
 </html>
