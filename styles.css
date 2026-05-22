@@ -886,6 +886,12 @@ button.primary:hover {
     height: 500px;
 }
 
+.windrose-chart.climate-chart-grid {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+}
+
 #preview-info {
     margin-bottom: 14px;
     padding: 13px 14px;
