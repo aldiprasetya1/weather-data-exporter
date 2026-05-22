@@ -228,6 +228,83 @@
                             class="link-button"
                         >Hapus pilihan</button>
                     </div>
+
+                    <div class="coordinate-panel">
+                        <div class="field">
+                            <label for="coordinate-format">Input koordinat manual</label>
+                            <select id="coordinate-format">
+                                <option value="decimal" selected>Decimal Degrees</option>
+                                <option value="dms">Degrees Minutes Seconds (DMS)</option>
+                                <option value="utm">UTM</option>
+                            </select>
+                        </div>
+
+                        <div id="coord-decimal" class="coordinate-fields">
+                            <div class="row">
+                                <div class="field">
+                                    <label for="coord-lat">Lintang</label>
+                                    <input id="coord-lat" type="number" step="any" placeholder="-6.982262" />
+                                </div>
+                                <div class="field">
+                                    <label for="coord-lon">Bujur</label>
+                                    <input id="coord-lon" type="number" step="any" placeholder="107.753829" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="coord-dms" class="coordinate-fields" hidden>
+                            <div class="dms-grid">
+                                <label>Lintang</label>
+                                <input id="coord-lat-deg" type="number" step="any" placeholder="6" aria-label="Derajat lintang" />
+                                <input id="coord-lat-min" type="number" step="any" placeholder="58" aria-label="Menit lintang" />
+                                <input id="coord-lat-sec" type="number" step="any" placeholder="56.145" aria-label="Detik lintang" />
+                                <select id="coord-lat-hemi" aria-label="Belahan lintang">
+                                    <option value="S" selected>LS</option>
+                                    <option value="N">LU</option>
+                                </select>
+
+                                <label>Bujur</label>
+                                <input id="coord-lon-deg" type="number" step="any" placeholder="107" aria-label="Derajat bujur" />
+                                <input id="coord-lon-min" type="number" step="any" placeholder="45" aria-label="Menit bujur" />
+                                <input id="coord-lon-sec" type="number" step="any" placeholder="13.786" aria-label="Detik bujur" />
+                                <select id="coord-lon-hemi" aria-label="Belahan bujur">
+                                    <option value="E" selected>BT</option>
+                                    <option value="W">BB</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="coord-utm" class="coordinate-fields" hidden>
+                            <div class="row">
+                                <div class="field">
+                                    <label for="coord-utm-zone">Zona UTM</label>
+                                    <input id="coord-utm-zone" type="number" min="1" max="60" step="1" placeholder="48" />
+                                </div>
+                                <div class="field">
+                                    <label for="coord-utm-hemi">Hemisfer</label>
+                                    <select id="coord-utm-hemi">
+                                        <option value="S" selected>Selatan</option>
+                                        <option value="N">Utara</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="field">
+                                    <label for="coord-utm-easting">Easting (X)</label>
+                                    <input id="coord-utm-easting" type="number" step="any" placeholder="804289.231" />
+                                </div>
+                                <div class="field">
+                                    <label for="coord-utm-northing">Northing (Y)</label>
+                                    <input id="coord-utm-northing" type="number" step="any" placeholder="9227322.516" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="coordinate-actions">
+                            <button id="coord-apply-btn" type="button" class="primary">Terapkan Koordinat</button>
+                            <span id="coord-status" class="muted"></span>
+                        </div>
+                    </div>
                     <div id="map-canvas" class="map-canvas"></div>
                     <p id="map-help" class="muted">
                         <strong>Pin tunggal:</strong> klik di peta untuk taruh
@@ -366,10 +443,18 @@
             <div id="status" class="status" hidden></div>
         </form>
 
+        <section id="preview-section" class="card" hidden>
+            <h2>Pratinjau (50 baris pertama)</h2>
+            <div id="preview-info" class="muted"></div>
+            <div class="table-wrap">
+                <table id="preview-table"></table>
+            </div>
+        </section>
+
         <section id="climate-chart-section" class="card" hidden>
             <div class="windrose-header">
                 <h2>Grafik Rona Awal</h2>
-                <button id="climate-chart-download" type="button">Unduh PNG</button>
+                <button id="climate-chart-download" type="button">Unduh Semua PNG</button>
             </div>
             <div id="climate-chart-info" class="muted"></div>
             <div id="climate-chart" class="windrose-chart"></div>
@@ -384,23 +469,15 @@
                 <span class="muted">Mode:</span>
                 <label class="radio inline">
                     <input type="radio" name="windrose-mode" value="from" checked />
-                    <span><strong>Blowing FROM</strong> <em class="muted">- asal angin (konvensi meteorologi)</em></span>
+                    <span><strong>Blowing From</strong> <em class="muted">- asal angin (konvensi meteorologi)</em></span>
                 </label>
                 <label class="radio inline">
                     <input type="radio" name="windrose-mode" value="to" />
-                    <span><strong>Blowing TO</strong> <em class="muted">- arah hembusan</em></span>
+                    <span><strong>Blowing To</strong> <em class="muted">- arah hembusan</em></span>
                 </label>
             </div>
             <div id="windrose-info" class="muted"></div>
             <div id="windrose-chart" class="windrose-chart"></div>
-        </section>
-
-        <section id="preview-section" class="card" hidden>
-            <h2>Pratinjau (50 baris pertama)</h2>
-            <div id="preview-info" class="muted"></div>
-            <div class="table-wrap">
-                <table id="preview-table"></table>
-            </div>
         </section>
             </div>
         </div>
