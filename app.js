@@ -25,6 +25,8 @@ const POWER_FILL = -999.0;
 const TOKEN_STORAGE_KEY = "wde.auth.token";
 const PROFILE_STORAGE_KEY = "wde.auth.profile";
 const THEME_STORAGE_KEY = "wde.theme";
+const LOGOUT_NOTICE_MS = 5 * 60 * 1000;
+let loginStatusTimer = null;
 
 // Open-Meteo hourly variables fetched on every request. Wind speeds come back
 // in m/s thanks to the `wind_speed_unit=ms` query parameter. The hourly values
@@ -196,11 +198,21 @@ function refreshAuthBar() {
     lab.textContent = `Login: ${p.label} - berakhir ${expStr}`;
 }
 
-function showLoginStatus(msg, type = "info") {
+function showLoginStatus(msg, type = "info", autoHideMs = 0) {
     const el = document.getElementById("login-status");
     el.hidden = false;
     el.textContent = msg;
     el.className = `status ${type}`;
+    if (loginStatusTimer) {
+        clearTimeout(loginStatusTimer);
+        loginStatusTimer = null;
+    }
+    if (autoHideMs > 0) {
+        loginStatusTimer = setTimeout(() => {
+            if (el.textContent === msg) el.hidden = true;
+            loginStatusTimer = null;
+        }, autoHideMs);
+    }
 }
 
 async function handleLoginSubmit() {
@@ -239,7 +251,8 @@ async function handleLoginSubmit() {
 
 function handleLogout() {
     clearAuth();
-    showLoginView("Anda telah logout.");
+    showLoginView();
+    showLoginStatus("Anda telah logout.", "info", LOGOUT_NOTICE_MS);
 }
 
 // ===== Admin panel =====
