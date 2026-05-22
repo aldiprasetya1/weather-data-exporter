@@ -461,6 +461,88 @@ footer a { color: var(--primary); }
     flex-wrap: wrap;
     margin-bottom: 8px;
 }
+
+.coordinate-panel {
+    padding: 14px;
+    margin: 10px 0 12px;
+    background: rgba(39, 39, 42, 0.48);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+}
+
+.coordinate-fields {
+    margin-top: 4px;
+}
+
+.dms-grid {
+    display: grid;
+    grid-template-columns: 86px repeat(3, minmax(74px, 1fr)) minmax(76px, 0.7fr);
+    gap: 8px;
+    align-items: center;
+}
+
+.dms-grid label {
+    color: #e4e4e7;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.dms-grid input,
+.dms-grid select {
+    min-width: 0;
+    padding: 9px 10px;
+    color: #fafafa;
+    background: rgba(15, 15, 17, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 7px;
+}
+
+.coordinate-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.coordinate-actions .primary {
+    min-width: 170px;
+}
+
+.climate-chart-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    height: auto;
+    min-height: 0;
+}
+
+.climate-chart-card {
+    padding: 14px;
+    background: rgba(15, 15, 17, 0.40);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+}
+
+.climate-chart-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.climate-chart-card-header h3 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+.climate-plot {
+    width: 100%;
+    height: 430px;
+    min-height: 380px;
+}
 .mode-toggle {
     display: flex;
     gap: 8px;
@@ -491,6 +573,8 @@ footer a { color: var(--primary); }
     .actions { justify-content: stretch; }
     .actions button { flex: 1; }
     .map-canvas { height: 320px; }
+    .dms-grid { grid-template-columns: 1fr; }
+    .climate-plot { height: 380px; }
 }
 
 /* Professional dashboard refresh */
@@ -1298,10 +1382,27 @@ html[data-theme="light"] select#station-select,
 html[data-theme="light"] .suggestions,
 html[data-theme="light"] .radio,
 html[data-theme="light"] .radio-inline,
-html[data-theme="light"] .table-wrap {
+html[data-theme="light"] .table-wrap,
+html[data-theme="light"] .coordinate-panel,
+html[data-theme="light"] .climate-chart-card {
     color: #0f172a;
     background: #ffffff;
     border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .dms-grid label {
+    color: #334155;
+}
+
+html[data-theme="light"] .dms-grid input,
+html[data-theme="light"] .dms-grid select {
+    color: #0f172a;
+    background: #ffffff;
+    border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .climate-chart-card-header h3 {
+    color: #0f172a;
 }
 
 html[data-theme="light"] .field input::placeholder {
