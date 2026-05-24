@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260522-bar-chart-layout-v2" />
+    <link rel="stylesheet" href="styles.css?v=20260524-download-quota" />
     <script>
         (() => {
             const saved = localStorage.getItem("wde.theme");
@@ -47,10 +47,7 @@
             <div class="brand-text">
                 <h1>Angin Berhembus</h1>
                 <p class="subtitle">
-                    Website unduh data historis dan ekspor ke Excel dengan mudah dari tiga sumber:
-                    <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>,
-                    <a href="https://meteostat.net/" target="_blank" rel="noopener">Meteostat</a>, dan
-                    <a href="https://power.larc.nasa.gov/" target="_blank" rel="noopener">NASA POWER</a>.
+                    Penyedia data meteorologis siap pakai untuk dokumen lingkungan, riset, dan analisis teknis
                 </p>
             </div>
         </div>
@@ -368,6 +365,7 @@
                     </div>
                 </div>
                 <div class="actions">
+                    <button id="baseline-5yr-btn" type="button">Unduh data 2021 - 2025</button>
                     <button id="baseline-btn" type="button">Unduh data 2016 - 2025</button>
                 </div>
                 <p class="muted">
@@ -454,7 +452,7 @@
         <section id="climate-chart-section" class="card" hidden>
             <div class="windrose-header">
                 <h2>Grafik Rona Awal</h2>
-                <button id="climate-chart-download" type="button">Unduh Semua PNG</button>
+                <button id="climate-chart-download" type="button">Unduh Semua PNG (.zip)</button>
             </div>
             <div id="climate-chart-info" class="muted"></div>
             <div id="climate-chart" class="windrose-chart"></div>
@@ -463,7 +461,7 @@
         <section id="windrose-section" class="card" hidden>
             <div class="windrose-header">
                 <h2>Windrose</h2>
-                <button id="windrose-download" type="button">Unduh PNG</button>
+                <button id="windrose-download" type="button">Unduh Semua PNG (.zip)</button>
             </div>
             <div class="windrose-controls">
                 <span class="muted">Mode:</span>
@@ -493,8 +491,9 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="config.js"></script>
-    <script src="app.js?v=20260522-bar-chart-layout-v2"></script>
+    <script src="app.js?v=20260524-download-quota"></script>
 </body>
 </html>
