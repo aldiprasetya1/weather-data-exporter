@@ -14,8 +14,6 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
-from . import auth
-
 router = APIRouter(tags=["proxies"])
 
 HTTP_TIMEOUT = 30.0
@@ -54,7 +52,7 @@ async def _proxy_get(url: str, params: list[tuple[str, str]]) -> Any:
         return resp.text
 
 
-@router.get("/api/openmeteo/{kind}", dependencies=[auth.RequireToken])
+@router.get("/api/openmeteo/{kind}")
 async def openmeteo_proxy(kind: str, request: Request) -> Any:
     if kind not in _OPENMETEO_ROUTES:
         raise HTTPException(
@@ -68,7 +66,7 @@ async def openmeteo_proxy(kind: str, request: Request) -> Any:
     return await _proxy_get(_OPENMETEO_ROUTES[kind], params)
 
 
-@router.get("/api/power/daily/point", dependencies=[auth.RequireToken])
+@router.get("/api/power/daily/point")
 async def power_proxy(request: Request) -> Any:
     params = list(request.query_params.multi_items())
     return await _proxy_get(_POWER_DAILY_URL, params)
