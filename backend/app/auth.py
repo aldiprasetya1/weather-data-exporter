@@ -40,8 +40,9 @@ TURSO_URL = os.environ.get("TURSO_DATABASE_URL", "").strip()
 TURSO_AUTH = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
 USE_TURSO = bool(TURSO_URL and TURSO_AUTH and libsql is not None)
 
-TOKEN_PREFIX = "wde_"
+TOKEN_PREFIX = "ABS-"
 ALLOWED_DAYS = (1, 7, 30)
+QUOTA_BY_DAYS = {1: 1, 7: 10, 30: 100}
 
 # Custom (admin-supplied) tokens: 6–64 chars from [A-Za-z0-9_-].
 CUSTOM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
@@ -76,10 +77,18 @@ def init_db() -> None:
                 label       TEXT NOT NULL,
                 created_at  TEXT NOT NULL,
                 expires_at  TEXT NOT NULL,
-                revoked     INTEGER NOT NULL DEFAULT 0
+                revoked     INTEGER NOT NULL DEFAULT 0,
+                quota_limit INTEGER NOT NULL DEFAULT 1,
+                download_count INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+        cur = conn.execute("PRAGMA table_info(tokens)")
+        existing = {row[1] for row in cur.fetchall()}
+        if "quota_limit" not in existing:
+            conn.execute("ALTER TABLE tokens ADD COLUMN quota_limit INTEGER NOT NULL DEFAULT 1")
+        if "download_count" not in existing:
+            conn.execute("ALTER TABLE tokens ADD COLUMN download_count INTEGER NOT NULL DEFAULT 0")
         conn.commit()
 
 
@@ -104,6 +113,8 @@ class TokenRecord:
     created_at: str
     expires_at: str
     revoked: bool
+    quota_limit: int = 1
+    download_count: int = 0
 
     @classmethod
     def from_row(cls, row: Any) -> "TokenRecord":
@@ -116,6 +127,8 @@ class TokenRecord:
             created_at=row[2],
             expires_at=row[3],
             revoked=bool(row[4]),
+            quota_limit=int(row[5]) if len(row) > 5 and row[5] is not None else 1,
+            download_count=int(row[6]) if len(row) > 6 and row[6] is not None else 0,
         )
 
     def is_expired(self, now: datetime | None = None) -> bool:
@@ -135,6 +148,9 @@ class TokenRecord:
             "expires_at": self.expires_at,
             "revoked": self.revoked,
             "expired": self.is_expired(),
+            "quota_limit": self.quota_limit,
+            "download_count": self.download_count,
+            "remaining_downloads": max(self.quota_limit - self.download_count, 0),
         }
 
     def to_admin(self) -> dict:
@@ -162,12 +178,15 @@ def create_token(label: str, days: int, custom_token: str | None = None) -> Toke
 
     now = datetime.now(timezone.utc)
     expires = now + timedelta(days=days)
+    quota_limit = QUOTA_BY_DAYS.get(days, 1)
     rec = TokenRecord(
         token=token,
         label=label,
         created_at=now.isoformat(timespec="seconds"),
         expires_at=expires.isoformat(timespec="seconds"),
         revoked=False,
+        quota_limit=quota_limit,
+        download_count=0,
     )
     with db_conn() as conn:
         # libsql doesn't expose IntegrityError consistently, so do an
@@ -180,9 +199,9 @@ def create_token(label: str, days: int, custom_token: str | None = None) -> Toke
             raise ValueError("Token already exists; pick a different value")
         try:
             conn.execute(
-                "INSERT INTO tokens(token, label, created_at, expires_at, revoked)"
-                " VALUES (?, ?, ?, ?, 0)",
-                (rec.token, rec.label, rec.created_at, rec.expires_at),
+                "INSERT INTO tokens(token, label, created_at, expires_at, revoked, quota_limit, download_count)"
+                " VALUES (?, ?, ?, ?, 0, ?, 0)",
+                (rec.token, rec.label, rec.created_at, rec.expires_at, rec.quota_limit),
             )
             conn.commit()
         except sqlite3.IntegrityError as exc:
@@ -199,6 +218,7 @@ def list_tokens() -> list[TokenRecord]:
     with db_conn() as conn:
         cur = conn.execute(
             "SELECT token, label, created_at, expires_at, revoked"
+            ", quota_limit, download_count"
             " FROM tokens ORDER BY created_at DESC"
         )
         return [TokenRecord.from_row(r) for r in cur.fetchall()]
@@ -208,6 +228,7 @@ def get_token(token: str) -> TokenRecord | None:
     with db_conn() as conn:
         cur = conn.execute(
             "SELECT token, label, created_at, expires_at, revoked"
+            ", quota_limit, download_count"
             " FROM tokens WHERE token = ?",
             (token,),
         )
@@ -220,6 +241,37 @@ def revoke_token(token: str) -> bool:
         cur = conn.execute("UPDATE tokens SET revoked = 1 WHERE token = ?", (token,))
         conn.commit()
         return cur.rowcount > 0
+
+
+def consume_download(token: str) -> TokenRecord:
+    rec = get_token(token)
+    if rec is None or rec.revoked or rec.is_expired():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if rec.download_count >= rec.quota_limit:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Kuota download token sudah habis",
+        )
+    with db_conn() as conn:
+        cur = conn.execute(
+            "UPDATE tokens SET download_count = download_count + 1 "
+            "WHERE token = ? AND revoked = 0 AND download_count < quota_limit",
+            (token,),
+        )
+        conn.commit()
+        if cur.rowcount < 1:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Kuota download token sudah habis",
+            )
+    updated = get_token(token)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Token not found")
+    return updated
 
 
 def _extract_bearer(authorization: str | None) -> str:
