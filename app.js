@@ -144,16 +144,7 @@ function isAuthExpired(profile) {
 
 async function apiFetch(url, options = {}) {
     const headers = new Headers(options.headers || {});
-    if (state.auth.token) {
-        headers.set("Authorization", `Bearer ${state.auth.token}`);
-    }
-    const res = await fetch(url, { ...options, headers });
-    if (res.status === 401) {
-        clearAuth();
-        showLoginView("Sesi Anda berakhir. Silakan login kembali.");
-        throw new AuthError("Token tidak valid atau sudah berakhir.");
-    }
-    return res;
+    return fetch(url, { ...options, headers });
 }
 
 // ===== Login / view switching =====
@@ -190,12 +181,19 @@ function setHiddenById(id, hidden) {
 function refreshAuthBar() {
     const p = state.auth.profile;
     const lab = document.getElementById("auth-label");
-    if (!p || !lab) return;
+    if (!lab) return;
+    const logout = document.getElementById("logout-btn");
+    if (!p) {
+        lab.textContent = "Token diminta saat mengunduh file.";
+        if (logout) logout.hidden = true;
+        return;
+    }
+    if (logout) logout.hidden = false;
     const exp = p.expires_at ? new Date(p.expires_at) : null;
     const expStr = exp
         ? exp.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
         : "?";
-    lab.textContent = `Login: ${p.label} - berakhir ${expStr}`;
+    lab.textContent = `Token: ${p.label} - sisa ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download - berakhir ${expStr}`;
 }
 
 function showLoginStatus(msg, type = "info", autoHideMs = 0) {
@@ -429,7 +427,7 @@ function renderAdminTokens(tokens) {
     }
     const thead = document.createElement("thead");
     thead.innerHTML = `<tr>
-        <th>Label</th><th>Status</th><th>Berakhir</th><th>Token</th><th></th>
+        <th>Label</th><th>Status</th><th>Kuota</th><th>Berakhir</th><th>Token</th><th></th>
     </tr>`;
     t.appendChild(thead);
     const tbody = document.createElement("tbody");
@@ -442,6 +440,7 @@ function renderAdminTokens(tokens) {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${escapeHtml(tok.label)}</td>
             <td>${status}</td>
+            <td>${escapeHtml(String(tok.download_count ?? 0))}/${escapeHtml(String(tok.quota_limit ?? "-"))}</td>
             <td>${escapeHtml(tok.expires_at)}</td>
             <td><code class="token-display">${escapeHtml(tok.token)}</code></td>
             <td><button class="link-button revoke-btn" data-token="${escapeHtml(tok.token)}">Revoke</button></td>`;
@@ -470,7 +469,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
-    // Login form bindings.
+    // Token form is kept as a fallback; the main app asks for token only at download time.
     document.getElementById("login-btn").addEventListener("click", handleLoginSubmit);
     document.getElementById("login-token").addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
@@ -480,14 +479,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     document.getElementById("logout-btn").addEventListener("click", handleLogout);
 
-    // Decide initial view based on stored token.
+    // Data preview is open. Subscription token is consumed only when downloading files.
     loadAuth();
-    if (state.auth.token && state.auth.profile && !isAuthExpired(state.auth.profile)) {
-        showAppView();
-    } else {
-        if (state.auth.token) clearAuth();
-        showLoginView();
-    }
+    if (state.auth.profile && isAuthExpired(state.auth.profile)) clearAuth();
+    showAppView();
 
     els.cityInput = document.getElementById("city-input");
     els.suggestions = document.getElementById("city-suggestions");
@@ -509,6 +504,7 @@ document.addEventListener("DOMContentLoaded", () => {
     els.endDate = document.getElementById("end-date");
     els.timezone = document.getElementById("timezone");
     els.fallbackSource = document.getElementById("fallback-source");
+    els.baseline5yrBtn = document.getElementById("baseline-5yr-btn");
     els.baselineBtn = document.getElementById("baseline-btn");
     els.outputMode = document.getElementById("output-mode");
     els.periodHelpOM = document.getElementById("period-help-openmeteo");
@@ -547,6 +543,13 @@ document.addEventListener("DOMContentLoaded", () => {
     setupMapControls();
     setupCoordinateInput();
 
+    if (els.baseline5yrBtn) {
+        els.baseline5yrBtn.addEventListener("click", () => {
+            els.startDate.value = "2021-01-01";
+            els.endDate.value = "2025-12-31";
+            showStatus("Rentang unduh data 2021 - 2025 siap dipakai.", "info");
+        });
+    }
     if (els.baselineBtn) {
         els.baselineBtn.addEventListener("click", () => {
             els.startDate.value = "2016-01-01";
@@ -566,9 +569,9 @@ document.addEventListener("DOMContentLoaded", () => {
         handleSubmit({ download: true });
     });
     els.climateChartBtn.addEventListener("click", showClimateChart);
-    els.climateChartDownload.addEventListener("click", downloadClimateChartPNG);
+    els.climateChartDownload.addEventListener("click", downloadAllPngArchive);
     els.windroseBtn.addEventListener("click", showWindrose);
-    els.windroseDownload.addEventListener("click", downloadWindrosePNG);
+    els.windroseDownload.addEventListener("click", downloadAllPngArchive);
     els.windroseModeRadios.forEach((r) =>
         r.addEventListener("change", () => {
             state.windroseMode = r.value;
@@ -1404,6 +1407,11 @@ async function handleSubmit({ download }) {
         renderPreview(previewResult);
         renderClimateChart(result);
         if (download) {
+            const authorized = await authorizeDownloadToken("Unduh Excel");
+            if (!authorized) {
+                showStatus("Unduhan dibatalkan. Token diperlukan untuk mengunduh file.", "error");
+                return;
+            }
             exportXlsx(result, getOutputMode());
             const rowLabel = getOutputMode() === "monthly"
                 ? `${previewResult.rows.length} baris rekap bulanan`
@@ -2456,11 +2464,7 @@ function renderClimateChart(result, scroll = false) {
         header.className = "climate-chart-card-header";
         const title = document.createElement("h3");
         title.textContent = metric.title;
-        const download = document.createElement("button");
-        download.type = "button";
-        download.textContent = "Unduh PNG";
         header.appendChild(title);
-        header.appendChild(download);
         const plot = document.createElement("div");
         plot.className = "climate-plot";
         plot.id = `climate-plot-${metric.id}`;
@@ -2510,9 +2514,6 @@ function renderClimateChart(result, scroll = false) {
             displaylogo: false,
             modeBarButtonsToRemove: ["lasso2d", "select2d"],
         });
-        download.addEventListener("click", () =>
-            downloadClimatePlot(plot, result, metric, metricIndex)
-        );
     });
 
     els.climateChartSection.hidden = false;
@@ -2656,28 +2657,107 @@ function chartLocationLabel(result) {
     return result.meta.city?.name || "Lokasi";
 }
 
-function downloadClimateChartPNG() {
-    if (!state.lastResult || !els.climateChart || els.climateChartSection.hidden) {
-        showStatus("Tampilkan grafik dulu sebelum unduh.", "error");
-        return;
-    }
-    const plots = Array.from(els.climateChart.querySelectorAll(".climate-plot"));
-    if (!plots.length) {
-        showStatus("Tidak ada grafik yang bisa diunduh.", "error");
-        return;
-    }
-    const chart = buildClimateChartData(state.lastResult);
-    plots.forEach((plot, index) => {
-        const metric = chart.metrics[index] || { id: `grafik-${index + 1}` };
-        setTimeout(() => downloadClimatePlot(plot, state.lastResult, metric, index), index * 350);
+async function authorizeDownloadToken(actionLabel = "Download") {
+    const current = state.auth.token || "";
+    const token = window.prompt(`${actionLabel} membutuhkan token berlangganan. Masukkan token:`, current);
+    if (!token) return null;
+    const cleaned = token.trim();
+    if (!cleaned) return null;
+    showStatus("Memvalidasi token dan kuota download...", "loading");
+    const res = await fetch(`${BACKEND_URL}/api/auth/consume-download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cleaned }),
     });
+    const text = await res.text();
+    if (!res.ok) {
+        let detail = text;
+        try {
+            detail = JSON.parse(text).detail || text;
+        } catch (_) {}
+        throw new Error(detail || "Token tidak valid atau kuota habis.");
+    }
+    const profile = JSON.parse(text);
+    saveAuth(cleaned, profile);
+    refreshAuthBar();
+    showStatus(`Token valid. Sisa kuota download: ${profile.remaining_downloads}/${profile.quota_limit}.`, "success");
+    return profile;
+}
+
+function downloadClimateChartPNG() {
+    return downloadAllPngArchive();
+}
+
+async function downloadAllPngArchive() {
+    if (!state.lastResult) {
+        showStatus("Muat data dan tampilkan grafik/windrose dulu sebelum unduh PNG.", "error");
+        return;
+    }
+    if (!window.JSZip) {
+        showStatus("Library arsip belum siap. Muat ulang halaman lalu coba lagi.", "error");
+        return;
+    }
+    const items = [];
+    const chart = buildClimateChartData(state.lastResult);
+    if (els.climateChart && !els.climateChartSection.hidden) {
+        Array.from(els.climateChart.querySelectorAll(".climate-plot")).forEach((plot, index) => {
+            const metric = chart.metrics[index] || { id: `grafik-${index + 1}` };
+            items.push({
+                plot,
+                filename: climatePlotFilename(state.lastResult, metric, index),
+            });
+        });
+    }
+    if (els.windroseChart && !els.windroseSection.hidden) {
+        items.push({
+            plot: els.windroseChart,
+            filename: windroseFilename(state.lastResult),
+            width: 900,
+            height: 800,
+        });
+    }
+    if (!items.length) {
+        showStatus("Tampilkan grafik atau windrose dulu sebelum unduh arsip PNG.", "error");
+        return;
+    }
+    try {
+        const zip = new JSZip();
+        showStatus("Menyiapkan arsip PNG...", "loading");
+        for (const item of items) {
+            const dataUrl = await Plotly.toImage(item.plot, {
+                format: "png",
+                width: item.width || 1100,
+                height: item.height || 700,
+            });
+            zip.file(`${item.filename}.png`, dataUrl.split(",")[1], { base64: true });
+        }
+        const blob = await zip.generateAsync({ type: "blob" });
+        await authorizeDownloadToken("Unduh arsip PNG");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `png_angin_berhembus_${state.lastResult.meta.startDate}_to_${state.lastResult.meta.endDate}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showStatus(`Berhasil. ${items.length} PNG diunduh dalam satu arsip ZIP.`, "success");
+    } catch (err) {
+        console.error(err);
+        showStatus(`Gagal unduh PNG: ${friendlyErrorMessage(err)}`, "error");
+    }
+}
+
+function climatePlotFilename(result, metric, index = 0) {
+    const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
+    return (
+        `grafik_rona_awal_${safe(metric.id || `parameter_${index + 1}`)}_${safe(chartLocationLabel(result))}_` +
+        `${result.meta.startDate}_to_${result.meta.endDate}`
+    );
 }
 
 function downloadClimatePlot(plot, result, metric, index = 0) {
-    const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
-    const filename =
-        `grafik_rona_awal_${safe(metric.id || `parameter_${index + 1}`)}_${safe(chartLocationLabel(result))}_` +
-        `${result.meta.startDate}_to_${result.meta.endDate}`;
+    const filename = climatePlotFilename(result, metric, index);
     Plotly.downloadImage(plot, {
         format: "png",
         width: 1100,
@@ -3141,20 +3221,17 @@ function downloadWindrosePNG() {
         showStatus("Tampilkan windrose dulu sebelum unduh.", "error");
         return;
     }
+    downloadAllPngArchive();
+}
+
+function windroseFilename(result) {
     const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
-    let filename;
     if (result.source === "meteostat") {
         const s = result.meta.station;
-        filename = `windrose_meteostat_${safe(s.wmo || s.id)}_${result.meta.startDate}_to_${result.meta.endDate}`;
-    } else if (result.source === "power") {
-        filename = `windrose_power_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
-    } else {
-        filename = `windrose_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+        return `windrose_meteostat_${safe(s.wmo || s.id)}_${result.meta.startDate}_to_${result.meta.endDate}`;
     }
-    Plotly.downloadImage(els.windroseChart, {
-        format: "png",
-        width: 900,
-        height: 800,
-        filename,
-    });
+    if (result.source === "power") {
+        return `windrose_power_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+    }
+    return `windrose_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
 }
