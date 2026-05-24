@@ -33,8 +33,8 @@ from .proxies import router as proxies_router
 app = FastAPI(
     title="Weather Data Exporter — authenticated proxy",
     description=(
-        "Authenticated proxy for Meteostat / Open-Meteo / NASA POWER. "
-        "All data endpoints require a Bearer token issued by the admin."
+        "Proxy for Meteostat / Open-Meteo / NASA POWER. "
+        "Data preview is open; downloads require a subscription token."
     ),
     version="0.2.0",
 )
@@ -129,7 +129,7 @@ def healthz() -> dict[str, str]:
 def login(payload: dict) -> dict:
     """Verify a Bearer token and return its public profile.
 
-    Body: ``{"token": "wde_..."}``
+    Body: ``{"token": "ABS-..."}``
     """
     token = (payload.get("token") or "").strip()
     if not token:
@@ -142,13 +142,22 @@ def login(payload: dict) -> dict:
     return rec.to_public()
 
 
-@app.get("/stations", dependencies=[auth.RequireToken])
+@app.post("/api/auth/consume-download")
+def consume_download(payload: dict) -> dict:
+    token = (payload.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="`token` is required")
+    rec = auth.consume_download(token)
+    return rec.to_public()
+
+
+@app.get("/stations")
 def list_stations() -> JSONResponse:
     """Return all Indonesian Meteostat stations with hourly data."""
     return JSONResponse({"count": len(STATIONS), "stations": STATIONS})
 
 
-@app.get("/hourly/{station_id}", dependencies=[auth.RequireToken])
+@app.get("/hourly/{station_id}")
 async def hourly(
     station_id: str,
     start: str = Query(..., description="ISO date YYYY-MM-DD (UTC)"),
@@ -211,7 +220,7 @@ async def hourly(
     }
 
 
-@app.get("/daily/{station_id}", dependencies=[auth.RequireToken])
+@app.get("/daily/{station_id}")
 async def daily(
     station_id: str,
     start: str = Query(..., description="ISO date YYYY-MM-DD (UTC)"),
