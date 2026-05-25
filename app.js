@@ -543,6 +543,15 @@ document.addEventListener("DOMContentLoaded", () => {
     setupMapControls();
     setupCoordinateInput();
 
+    document.querySelectorAll(".year-preset-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const year = btn.dataset.year;
+            if (!/^\d{4}$/.test(year || "")) return;
+            els.startDate.value = `${year}-01-01`;
+            els.endDate.value = `${year}-12-31`;
+            showStatus(`Rentang unduh data tahun ${year} siap dipakai.`, "info");
+        });
+    });
     if (els.baseline5yrBtn) {
         els.baseline5yrBtn.addEventListener("click", () => {
             els.startDate.value = "2021-01-01";
@@ -570,14 +579,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     els.climateChartBtn.addEventListener("click", showClimateChart);
     els.climateChartDownload.addEventListener("click", downloadAllPngArchive);
-    els.windroseBtn.addEventListener("click", showWindrose);
+    els.windroseBtn.addEventListener("click", () => showWindrose(true));
     els.windroseDownload.addEventListener("click", downloadAllPngArchive);
     els.windroseModeRadios.forEach((r) =>
         r.addEventListener("change", () => {
             state.windroseMode = r.value;
             // Re-render only if a windrose was already shown for current data.
             if (state.lastResult && !els.windroseSection.hidden) {
-                showWindrose();
+                showWindrose(false);
             }
         })
     );
@@ -1407,17 +1416,25 @@ async function handleSubmit({ download }) {
         renderPreview(previewResult);
         renderClimateChart(result);
         if (download) {
-            const authorized = await authorizeDownloadToken("Unduh Excel");
+            if (result.windRows && result.windRows.length) {
+                showWindrose(false);
+            }
+            const archive = await buildVisiblePngArchive();
+            const authorized = await authorizeDownloadToken("Download .xlsx dan semua PNG");
             if (!authorized) {
                 showStatus("Unduhan dibatalkan. Token diperlukan untuk mengunduh file.", "error");
                 return;
             }
             exportXlsx(result, getOutputMode());
+            saveBlob(
+                archive.blob,
+                `png_angin_berhembus_${result.meta.startDate}_to_${result.meta.endDate}.zip`
+            );
             const rowLabel = getOutputMode() === "monthly"
                 ? `${previewResult.rows.length} baris rekap bulanan`
                 : `${result.rows.length} baris harian`;
             showStatus(
-                `Berhasil. ${rowLabel} diunduh sebagai Excel.`,
+                `Berhasil. ${rowLabel} diunduh sebagai Excel dan ${archive.count} PNG dalam arsip ZIP.`,
                 "success"
             );
         } else {
@@ -1425,7 +1442,7 @@ async function handleSubmit({ download }) {
                 ? `${previewResult.rows.length} baris rekap bulanan`
                 : `${result.rows.length} baris`;
             showStatus(
-                `Pratinjau dimuat: ${rowLabel}. Klik "Unduh Excel" untuk simpan.`,
+                `Pratinjau dimuat: ${rowLabel}. Klik "Download .xlsx dan semua PNG" untuk simpan.`,
                 "info"
             );
         }
@@ -1455,7 +1472,7 @@ function setLoading(loading, download = false) {
         ? "Memuat..."
         : els.previewBtn.dataset.idleText;
     els.downloadBtn.textContent = loading && download
-        ? "Menyiapkan Excel..."
+        ? "Menyiapkan .xlsx + PNG..."
         : els.downloadBtn.dataset.idleText;
 }
 
@@ -2693,9 +2710,26 @@ async function downloadAllPngArchive() {
         showStatus("Muat data dan tampilkan grafik/windrose dulu sebelum unduh PNG.", "error");
         return;
     }
+    try {
+        const archive = await buildVisiblePngArchive();
+        await authorizeDownloadToken("Unduh arsip PNG");
+        saveBlob(
+            archive.blob,
+            `png_angin_berhembus_${state.lastResult.meta.startDate}_to_${state.lastResult.meta.endDate}.zip`
+        );
+        showStatus(`Berhasil. ${archive.count} PNG diunduh dalam satu arsip ZIP.`, "success");
+    } catch (err) {
+        console.error(err);
+        showStatus(`Gagal unduh PNG: ${friendlyErrorMessage(err)}`, "error");
+    }
+}
+
+async function buildVisiblePngArchive() {
+    if (!state.lastResult) {
+        throw new Error("Muat data dulu sebelum unduh PNG.");
+    }
     if (!window.JSZip) {
-        showStatus("Library arsip belum siap. Muat ulang halaman lalu coba lagi.", "error");
-        return;
+        throw new Error("Library arsip belum siap. Muat ulang halaman lalu coba lagi.");
     }
     const items = [];
     const chart = buildClimateChartData(state.lastResult);
@@ -2717,35 +2751,30 @@ async function downloadAllPngArchive() {
         });
     }
     if (!items.length) {
-        showStatus("Tampilkan grafik atau windrose dulu sebelum unduh arsip PNG.", "error");
-        return;
+        throw new Error("Tampilkan grafik atau windrose dulu sebelum unduh arsip PNG.");
     }
-    try {
-        const zip = new JSZip();
-        showStatus("Menyiapkan arsip PNG...", "loading");
-        for (const item of items) {
-            const dataUrl = await Plotly.toImage(item.plot, {
-                format: "png",
-                width: item.width || 1100,
-                height: item.height || 700,
-            });
-            zip.file(`${item.filename}.png`, dataUrl.split(",")[1], { base64: true });
-        }
-        const blob = await zip.generateAsync({ type: "blob" });
-        await authorizeDownloadToken("Unduh arsip PNG");
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `png_angin_berhembus_${state.lastResult.meta.startDate}_to_${state.lastResult.meta.endDate}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        showStatus(`Berhasil. ${items.length} PNG diunduh dalam satu arsip ZIP.`, "success");
-    } catch (err) {
-        console.error(err);
-        showStatus(`Gagal unduh PNG: ${friendlyErrorMessage(err)}`, "error");
+    const zip = new JSZip();
+    showStatus("Menyiapkan arsip PNG...", "loading");
+    for (const item of items) {
+        const dataUrl = await Plotly.toImage(item.plot, {
+            format: "png",
+            width: item.width || 1100,
+            height: item.height || 700,
+        });
+        zip.file(`${item.filename}.png`, dataUrl.split(",")[1], { base64: true });
     }
+    return { blob: await zip.generateAsync({ type: "blob" }), count: items.length };
+}
+
+function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
 }
 
 function climatePlotFilename(result, metric, index = 0) {
@@ -3084,7 +3113,7 @@ const WINDROSE_BINS = [
     { label: "11+", min: 11, max: Infinity, color: "#08306b" },
 ];
 
-function showWindrose() {
+function showWindrose(scroll = true) {
     const result = state.lastResult;
     if (!result) {
         showStatus("Klik 'Pratinjau Data' dulu untuk memuat data sebelum render windrose.", "error");
@@ -3179,7 +3208,9 @@ function showWindrose() {
         `Total observasi: ${total} (calm <= 0.5 m/s: ${calmCount} = ` +
         `${total > 0 ? ((calmCount / total) * 100).toFixed(1) : "0"}%). ` +
         `Frekuensi tiap sektor 22.5deg, dibagi per bin kecepatan.`;
-    els.windroseSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (scroll) {
+        els.windroseSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 }
 
 function windroseTitle(result, mode) {
