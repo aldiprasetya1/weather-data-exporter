@@ -186,6 +186,7 @@ function refreshAuthBar() {
     if (!p) {
         lab.textContent = "Token diminta saat mengunduh file.";
         if (logout) logout.hidden = true;
+        refreshProfileMenu();
         return;
     }
     if (logout) logout.hidden = false;
@@ -194,6 +195,21 @@ function refreshAuthBar() {
         ? exp.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
         : "?";
     lab.textContent = `Token: ${p.label} - sisa ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download - berakhir ${expStr}`;
+    refreshProfileMenu();
+}
+
+function refreshProfileMenu() {
+    const p = state.auth.profile;
+    const email = document.getElementById("profile-email");
+    const quota = document.getElementById("profile-quota");
+    if (!email || !quota) return;
+    if (!p) {
+        email.textContent = "Belum masuk. Masukkan token saat download atau hubungkan akun.";
+        quota.textContent = "Kuota belum tersedia.";
+        return;
+    }
+    email.textContent = p.email || p.label || "Akun token";
+    quota.textContent = `Sisa kuota: ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download`;
 }
 
 function showLoginStatus(msg, type = "info", autoHideMs = 0) {
@@ -249,8 +265,8 @@ async function handleLoginSubmit() {
 
 function handleLogout() {
     clearAuth();
-    showLoginView();
-    showLoginStatus("Anda telah logout.", "info", LOGOUT_NOTICE_MS);
+    showAppView();
+    showStatus("Token/profil telah dikeluarkan. Token akan diminta lagi saat download.", "info");
 }
 
 // ===== Admin panel =====
@@ -478,6 +494,31 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
     document.getElementById("logout-btn").addEventListener("click", handleLogout);
+    const profileBtn = document.getElementById("profile-btn");
+    const profileMenu = document.getElementById("profile-menu");
+    if (profileBtn && profileMenu) {
+        profileBtn.addEventListener("click", () => {
+            refreshProfileMenu();
+            profileMenu.hidden = !profileMenu.hidden;
+        });
+        document.addEventListener("click", (event) => {
+            if (profileMenu.hidden) return;
+            if (profileMenu.contains(event.target) || profileBtn.contains(event.target)) return;
+            profileMenu.hidden = true;
+        });
+    }
+    const profileTokenBtn = document.getElementById("profile-token-btn");
+    if (profileTokenBtn) {
+        profileTokenBtn.addEventListener("click", async () => {
+            try {
+                await verifyTokenProfile();
+                const menu = document.getElementById("profile-menu");
+                if (menu) menu.hidden = true;
+            } catch (err) {
+                showStatus(`Gagal validasi token: ${friendlyErrorMessage(err)}`, "error");
+            }
+        });
+    }
 
     // Data preview is open. Subscription token is consumed only when downloading files.
     loadAuth();
@@ -2471,6 +2512,7 @@ function renderClimateChart(result, scroll = false) {
         return;
     }
     const theme = currentChartTheme();
+    const yearLabel = chartYearLabel(chart);
 
     els.climateChart.innerHTML = "";
     els.climateChart.classList.add("climate-chart-grid");
@@ -2480,7 +2522,7 @@ function renderClimateChart(result, scroll = false) {
         const header = document.createElement("div");
         header.className = "climate-chart-card-header";
         const title = document.createElement("h3");
-        title.textContent = metric.title;
+        title.textContent = `${metric.title} ${yearLabel}`;
         header.appendChild(title);
         const plot = document.createElement("div");
         plot.className = "climate-plot";
@@ -2502,7 +2544,7 @@ function renderClimateChart(result, scroll = false) {
 
         const layout = {
             title: {
-                text: `${metric.title} - ${chart.label}`,
+                text: `${metric.title} - ${chart.label} - ${yearLabel}`,
                 font: { size: 14 },
             },
             font: { family: "Inter, system-ui, sans-serif", color: theme.text },
@@ -2529,7 +2571,8 @@ function renderClimateChart(result, scroll = false) {
         Plotly.newPlot(plot, traces, layout, {
             responsive: true,
             displaylogo: false,
-            modeBarButtonsToRemove: ["lasso2d", "select2d"],
+            displayModeBar: false,
+            modeBarButtonsToRemove: ["toImage", "lasso2d", "select2d"],
         });
     });
 
@@ -2620,6 +2663,15 @@ function buildClimateChartData(result) {
     };
 }
 
+function chartYearLabel(chart) {
+    const years = Array.from(new Set(
+        chart.metrics.flatMap((metric) => metric.series.map((series) => series.year))
+    )).sort((a, b) => a - b);
+    if (!years.length) return "";
+    if (years.length === 1) return String(years[0]);
+    return `${years[0]}-${years[years.length - 1]}`;
+}
+
 function aggregateChartValues(values, aggregation) {
     if (!values || !values.length) return null;
     if (aggregation === "sum") return roundChart(sumValues(values));
@@ -2698,6 +2750,33 @@ async function authorizeDownloadToken(actionLabel = "Download") {
     saveAuth(cleaned, profile);
     refreshAuthBar();
     showStatus(`Token valid. Sisa kuota download: ${profile.remaining_downloads}/${profile.quota_limit}.`, "success");
+    return profile;
+}
+
+async function verifyTokenProfile() {
+    const current = state.auth.token || "";
+    const token = window.prompt("Masukkan token untuk menampilkan profil dan kuota:", current);
+    if (!token) return null;
+    const cleaned = token.trim();
+    if (!cleaned) return null;
+    showStatus("Memvalidasi token...", "loading");
+    const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cleaned }),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+        let detail = text;
+        try {
+            detail = JSON.parse(text).detail || text;
+        } catch (_) {}
+        throw new Error(detail || "Token tidak valid.");
+    }
+    const profile = JSON.parse(text);
+    saveAuth(cleaned, profile);
+    refreshAuthBar();
+    showStatus(`Profil token aktif. Sisa kuota: ${profile.remaining_downloads}/${profile.quota_limit}.`, "success");
     return profile;
 }
 
@@ -3197,7 +3276,8 @@ function showWindrose(scroll = true) {
     Plotly.newPlot(els.windroseChart, traces, layout, {
         responsive: true,
         displaylogo: false,
-        modeBarButtonsToRemove: ["lasso2d", "select2d"],
+        displayModeBar: false,
+        modeBarButtonsToRemove: ["toImage", "lasso2d", "select2d"],
     });
 
     els.windroseSection.hidden = false;
