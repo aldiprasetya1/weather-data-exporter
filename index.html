@@ -57,11 +57,19 @@
                 <span class="theme-icon" aria-hidden="true">☾</span>
                 <span id="theme-label">Gelap</span>
             </button>
+            <button id="profile-btn" type="button" class="profile-button">Profil</button>
             <button id="logout-btn" type="button" class="link-button">Logout</button>
+            <div id="profile-menu" class="profile-menu" hidden>
+                <strong>Akun</strong>
+                <p id="profile-email" class="muted">Belum masuk.</p>
+                <p id="profile-quota" class="muted">Token diminta saat mengunduh data.</p>
+                <button id="profile-token-btn" type="button" class="link-button">Masukkan token</button>
+                <button id="profile-google-btn" type="button" class="link-button">Google login segera hadir</button>
+            </div>
         </div>
     </header>
 
-    <main id="login-view">
+    <main id="login-view" hidden>
         <section class="card login-card">
             <h2>Masuk dengan Token</h2>
             <p class="muted">
@@ -109,7 +117,7 @@
                     <li>
                         <span>03</span>
                         <div>
-                            <strong>Unduh data 2016 - 2025</strong>
+                            <strong>Data 2016 - 2025</strong>
                             <small>Periode siap pakai untuk rona awal</small>
                         </div>
                     </li>
@@ -377,8 +385,8 @@
                     <button class="year-preset-btn" type="button" data-year="2025">2025</button>
                 </div>
                 <div class="actions">
-                    <button id="baseline-5yr-btn" type="button">Unduh data 2021 - 2025</button>
-                    <button id="baseline-btn" type="button">Unduh data 2016 - 2025</button>
+                    <button id="baseline-5yr-btn" type="button">Data 2021 - 2025</button>
+                    <button id="baseline-btn" type="button">Data 2016 - 2025</button>
                 </div>
                 <p class="muted">
                     Granularitas: <strong>per hari (daily)</strong>. Semua kecepatan angin
