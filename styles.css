@@ -353,6 +353,7 @@ footer a { color: var(--primary); }
 
 /* Auth bar in header */
 .auth-bar {
+    position: relative;
     margin-top: 12px;
     display: flex;
     align-items: center;
@@ -381,6 +382,44 @@ footer a { color: var(--primary); }
 }
 
 .link-button:hover { background: rgba(37, 99, 235, 0.08); }
+
+.profile-button {
+    padding: 7px 12px;
+    color: #ffffff;
+    background: #0f766e;
+    border: 1px solid #0f766e;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.profile-menu {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 10px);
+    right: 0;
+    width: min(320px, calc(100vw - 32px));
+    padding: 16px;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    text-align: left;
+}
+
+.profile-menu strong {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.profile-menu .link-button {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    text-align: left;
+}
 
 /* Login card */
 .login-card { max-width: 520px; margin: 24px auto; }
