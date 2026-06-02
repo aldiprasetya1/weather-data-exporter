@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260524-download-quota" />
+    <link rel="stylesheet" href="styles.css?v=20260602-noaa-cdo" />
     <script>
         (() => {
             const saved = localStorage.getItem("wde.theme");
@@ -104,7 +104,7 @@
                         <span>01</span>
                         <div>
                             <strong>Pilih sumber data</strong>
-                            <small>Meteostat, ERA5, atau NASA POWER</small>
+                            <small>Meteostat, ERA5, NASA POWER, atau NOAA CDO</small>
                         </div>
                     </li>
                     <li>
@@ -138,7 +138,7 @@
                 </ol>
                 <div class="sidebar-panel">
                     <strong>Standar Konsultan</strong>
-                    <p>Setiap export mencatat sumber data: Meteostat Daily, Hourly Aggregated, atau reanalysis/model.</p>
+                    <p>Setiap export mencatat sumber data: Meteostat Daily, Hourly Aggregated, NOAA CDO, atau reanalysis/model.</p>
                 </div>
             </aside>
 
@@ -166,6 +166,13 @@
                         <span>
                             <strong>NASA POWER (model + radiasi surya)</strong>
                             <em class="muted">- MERRA-2 reanalysis, lengkap dengan GHI/DNI/DHI/PAR (untuk PV / pertanian)</em>
+                        </span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="source" value="noaa" />
+                        <span>
+                            <strong>NOAA CDO / GHCN Daily (observasi global)</strong>
+                            <em class="muted">- data harian stasiun NOAA/NCEI, memakai stasiun terdekat dari lokasi</em>
                         </span>
                     </label>
                 </div>
@@ -404,6 +411,10 @@
                     Sumber: NASA POWER (MERRA-2 reanalysis + CERES/SYN1deg untuk radiasi),
                     data harian. Tersedia 1981-01-01 sampai ~2 hari yang lalu. Maks 366 hari per request.
                 </p>
+                <p class="muted" id="period-help-noaa" hidden>
+                    Sumber: NOAA CDO / GHCN Daily, observasi harian stasiun global.
+                    Sistem mencari stasiun GHCN terdekat dari lokasi dan mengambil data per tahun.
+                </p>
             </section>
 
             <section id="vars-section" class="card">
@@ -448,6 +459,12 @@
                     kolom sunshine duration langsung - kolom &ldquo;Lama penyinaran&rdquo;
                     diisi <strong>radiasi GHI all-sky (<code>ALLSKY_SFC_SW_DWN</code>,
                     kWh/m2/hari)</strong> sebagai proxy energi penyinaran.
+                </p>
+                <p class="muted" id="vars-help-noaa" hidden>
+                    NOAA CDO / GHCN Daily: <code>TAVG</code>, <code>PRCP</code>,
+                    <code>AWND</code>, <code>WDF2/WDF5</code>, dan <code>TSUN</code>.
+                    Tidak semua stasiun punya semua parameter; kolom yang tidak tersedia
+                    tetap dicatat sebagai kosong dan dijelaskan di sheet Info.
                 </p>
             </section>
 
