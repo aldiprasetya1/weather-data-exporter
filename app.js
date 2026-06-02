@@ -1,5 +1,6 @@
 ﻿// Weather Data Exporter - fetches weather data from Open-Meteo (model),
-// Meteostat (Indonesian observation stations), or NASA POWER (MERRA-2
+// Meteostat (Indonesian observation stations), NASA POWER (MERRA-2),
+// or NOAA CDO / GHCN Daily (global observation stations)
 // reanalysis with solar radiation), renders a windrose, and exports to
 // Excel. Every upstream call is proxied through the backend so a valid
 // Bearer token is required - see the login screen.
@@ -20,6 +21,7 @@ const GEOCODE_URL = `${BACKEND_URL}/api/openmeteo/geocoding`;
 const FORECAST_URL = `${BACKEND_URL}/api/openmeteo/forecast`;
 const ARCHIVE_URL = `${BACKEND_URL}/api/openmeteo/archive`;
 const POWER_URL = `${BACKEND_URL}/api/power/daily/point`;
+const NOAA_CDO_URL = `${BACKEND_URL}/api/noaa/cdo`;
 const POWER_FILL = -999.0;
 
 const TOKEN_STORAGE_KEY = "wde.auth.token";
@@ -79,8 +81,21 @@ const POWER_PARAMS = [
     },
 ];
 
+// NOAA CDO GHCN Daily values are returned in compact observation units:
+// TAVG/PRCP/AWND use tenths of their metric unit, TSUN is minutes, and wind
+// direction fields are degrees. Availability varies heavily by station.
+const NOAA_GHCND_DATASET = "GHCND";
+const NOAA_DAILY_COLS = [
+    { key: "TAVG", label: "Suhu rata-rata", unit: "deg C", scale: 0.1, digits: 2 },
+    { key: "PRCP", label: "Curah hujan", unit: "mm", scale: 0.1, digits: 2 },
+    { key: "AWND", label: "Kecepatan angin rata-rata", unit: "m/s", scale: 0.1, digits: 2 },
+    { key: "WDF", label: "Arah angin dominan", unit: "deg", scale: 1, digits: 0 },
+    { key: "TSUN", label: "Lama penyinaran matahari", unit: "jam", scale: 1 / 60, digits: 2 },
+];
+const NOAA_DATATYPE_IDS = ["TAVG", "PRCP", "AWND", "WDF2", "WDF5", "TSUN"];
+
 const state = {
-    source: "openmeteo", // "openmeteo" | "meteostat" | "power"
+    source: "openmeteo", // "openmeteo" | "meteostat" | "power" | "noaa"
     selectedCity: null,
     selectedStation: null,
     // Consolidated location used by Open-Meteo & NASA POWER fetchers.
@@ -551,10 +566,12 @@ document.addEventListener("DOMContentLoaded", () => {
     els.periodHelpOM = document.getElementById("period-help-openmeteo");
     els.periodHelpMS = document.getElementById("period-help-meteostat");
     els.periodHelpPW = document.getElementById("period-help-power");
+    els.periodHelpNOAA = document.getElementById("period-help-noaa");
     els.varsSection = document.getElementById("vars-section");
     els.varsHelpOM = document.getElementById("vars-help-openmeteo");
     els.varsHelpMS = document.getElementById("vars-help-meteostat");
     els.varsHelpPW = document.getElementById("vars-help-power");
+    els.varsHelpNOAA = document.getElementById("vars-help-noaa");
     els.previewBtn = document.getElementById("preview-btn");
     els.downloadBtn = document.getElementById("download-btn");
     els.climateChartBtn = document.getElementById("climate-chart-btn");
@@ -727,18 +744,21 @@ function updateSourceUI() {
     const isOM = src === "openmeteo";
     const isMS = src === "meteostat";
     const isPW = src === "power";
+    const isNOAA = src === "noaa";
 
-    // POWER reuses the city picker (it just needs lat/lon).
+    // POWER and NOAA reuse the city/map picker because both only need lat/lon.
     els.citySection.hidden = isMS;
     els.stationSection.hidden = !isMS;
     els.periodHelpOM.hidden = !isOM;
     els.periodHelpMS.hidden = !isMS;
     if (els.periodHelpPW) els.periodHelpPW.hidden = !isPW;
+    if (els.periodHelpNOAA) els.periodHelpNOAA.hidden = !isNOAA;
     // All three sources now fetch fixed daily variable sets; show the
     // matching help text for the selected source.
     if (els.varsHelpOM) els.varsHelpOM.hidden = !isOM;
     els.varsHelpMS.hidden = !isMS;
     if (els.varsHelpPW) els.varsHelpPW.hidden = !isPW;
+    if (els.varsHelpNOAA) els.varsHelpNOAA.hidden = !isNOAA;
     els.varsSection.hidden = false;
 
     if (isMS && !state.stations.length) {
@@ -1432,6 +1452,17 @@ async function handleSubmit({ download }) {
                 startDate,
                 endDate,
             });
+        } else if (state.source === "noaa") {
+            if (!state.location) {
+                throw new Error(
+                    "Pilih lokasi dulu (cari kota atau klik di peta) - NOAA CDO butuh lat/lon."
+                );
+            }
+            result = await fetchNoaaCdo({
+                location: state.location,
+                startDate,
+                endDate,
+            });
         } else {
             if (!state.location) {
                 throw new Error(
@@ -1529,6 +1560,10 @@ function emptyResultMessage(result) {
         const end = s.hourly_end ? ` Data stasiun tersedia sampai ${s.hourly_end}.` : "";
         return `Tidak ada data Meteostat untuk ${s.name} pada periode ${result.meta.startDate} sampai ${result.meta.endDate}.${end} Coba periode lain atau pilih stasiun berbeda.`;
     }
+    if (result.source === "noaa") {
+        const s = result.meta.station || {};
+        return `Tidak ada data NOAA CDO / GHCN Daily untuk ${s.name || s.id || "stasiun terpilih"} pada periode ${result.meta.startDate} sampai ${result.meta.endDate}. Coba lokasi lain atau sumber reanalysis/model.`;
+    }
     return `Tidak ada data untuk periode ${result.meta.startDate} sampai ${result.meta.endDate}. Coba lokasi atau tanggal lain.`;
 }
 
@@ -1545,6 +1580,12 @@ function friendlyErrorMessage(err) {
     }
     if (msg.includes("Backend HTTP")) {
         return msg.replace(/^Backend HTTP \d+:\s*/, "");
+    }
+    if (msg.includes("NOAA_CDO_TOKEN")) {
+        return "Token NOAA CDO belum dikonfigurasi di backend/Vercel. Tambahkan environment variable NOAA_CDO_TOKEN lalu redeploy.";
+    }
+    if (msg.includes("NOAA CDO")) {
+        return msg;
     }
     return msg;
 }
@@ -1889,6 +1930,275 @@ function powerDailyKeyToIso(t) {
     // POWER daily keys are "YYYYMMDD" -> "YYYY-MM-DD".
     if (!/^\d{8}$/.test(t)) return t;
     return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
+}
+
+// ----- NOAA CDO / GHCN Daily fetch -----
+
+async function fetchNoaaCdo({ location, startDate, endDate }) {
+    const target = representativeLocationPoint(location);
+    const stations = await findNoaaStations({
+        latitude: target.latitude,
+        longitude: target.longitude,
+        startDate,
+        endDate,
+    });
+    if (!stations.length) {
+        throw new Error(
+            "NOAA CDO tidak menemukan stasiun GHCN Daily di sekitar lokasi ini. " +
+            "Coba lokasi lain atau gunakan Open-Meteo/NASA POWER sebagai reanalysis/model."
+        );
+    }
+
+    let selected = null;
+    let observations = [];
+    let stationAttempts = 0;
+    for (const station of stations.slice(0, 8)) {
+        stationAttempts += 1;
+        const data = await fetchNoaaStationData({ station, startDate, endDate });
+        if (data.length) {
+            selected = station;
+            observations = data;
+            break;
+        }
+    }
+    if (!selected) {
+        throw new Error(
+            "NOAA CDO menemukan kandidat stasiun, tetapi tidak ada observasi harian " +
+            "untuk parameter utama pada periode tersebut."
+        );
+    }
+
+    const byDate = new Map();
+    const sourceRows = [];
+    for (const item of observations) {
+        const date = String(item.date || "").slice(0, 10);
+        if (!date) continue;
+        if (!byDate.has(date)) byDate.set(date, {});
+        byDate.get(date)[item.datatype] = item.value;
+    }
+
+    const headers = [
+        "Tanggal",
+        ...NOAA_DAILY_COLS.map((c) => `${c.label} (${c.unit})`),
+    ];
+    const rows = [];
+    const windRows = [];
+    let tavgFromMinMax = 0;
+    const datatypesFound = new Set();
+    for (const date of Array.from(byDate.keys()).sort()) {
+        const raw = byDate.get(date);
+        Object.keys(raw).forEach((k) => datatypesFound.add(k));
+        const tempDirect = convertNoaaValue("TAVG", raw.TAVG);
+        const tmax = convertNoaaValue("TMAX", raw.TMAX);
+        const tmin = convertNoaaValue("TMIN", raw.TMIN);
+        let temp = tempDirect;
+        if (temp == null && tmax != null && tmin != null) {
+            temp = roundTo((tmax + tmin) / 2, 2);
+            tavgFromMinMax += 1;
+        }
+        const prcp = convertNoaaValue("PRCP", raw.PRCP);
+        const awnd = convertNoaaValue("AWND", raw.AWND);
+        const wdf = convertNoaaValue("WDF", raw.WDF2 ?? raw.WDF5);
+        const tsun = convertNoaaValue("TSUN", raw.TSUN);
+        const row = [date, temp, prcp, awnd, wdf, tsun];
+        if (row.slice(1).some((v) => v != null)) {
+            rows.push(row);
+            sourceRows.push("noaa_cdo_ghcn_daily");
+            if (wdf != null && awnd != null) windRows.push({ dir: wdf, spd: awnd });
+        }
+    }
+
+    const coverage = buildCoverage({
+        startDate,
+        endDate,
+        rows,
+        rowSources: sourceRows,
+    });
+    selected.distanceKm = distanceKm(target.latitude, target.longitude, selected.latitude, selected.longitude);
+
+    return {
+        source: "noaa",
+        headers,
+        rows,
+        windRows,
+        meta: {
+            kind: "noaa",
+            city: target,
+            location,
+            station: selected,
+            stationAttempts,
+            startDate,
+            endDate,
+            granularity: "daily",
+            dataset: NOAA_GHCND_DATASET,
+            datatypesFound: Array.from(datatypesFound).sort(),
+            tavgFromMinMax,
+            rowSources: sourceRows,
+            sourceCounts: { noaa_cdo_ghcn_daily: rows.length },
+            coverage,
+        },
+    };
+}
+
+function representativeLocationPoint(location) {
+    const points = location?.points || [];
+    if (!points.length) throw new Error("Lokasi belum dipilih.");
+    if (location.mode !== "area") return points[0];
+    const latitude = mean(points.map((p) => p.latitude));
+    const longitude = mean(points.map((p) => p.longitude));
+    return {
+        ...points[0],
+        name: location.label || "Area terpilih",
+        latitude,
+        longitude,
+    };
+}
+
+async function findNoaaStations({ latitude, longitude, startDate, endDate }) {
+    const radii = [0.75, 2, 5, 10];
+    const found = new Map();
+    for (const radius of radii) {
+        const params = new URLSearchParams({
+            datasetid: NOAA_GHCND_DATASET,
+            startdate: startDate,
+            enddate: endDate,
+            extent: [
+                clampLat(latitude - radius),
+                clampLon(longitude - radius),
+                clampLat(latitude + radius),
+                clampLon(longitude + radius),
+            ].join(","),
+            limit: "1000",
+        });
+        const data = await callNoaaCdo("stations", params);
+        for (const s of data.results || []) {
+            if (!Number.isFinite(Number(s.latitude)) || !Number.isFinite(Number(s.longitude))) continue;
+            found.set(s.id, {
+                id: s.id,
+                name: s.name || s.id,
+                latitude: Number(s.latitude),
+                longitude: Number(s.longitude),
+                elevation: s.elevation ?? "",
+                mindate: s.mindate || "",
+                maxdate: s.maxdate || "",
+                datacoverage: s.datacoverage ?? null,
+            });
+        }
+        if (found.size >= 8) break;
+    }
+    return Array.from(found.values())
+        .map((s) => ({
+            ...s,
+            distanceKm: distanceKm(latitude, longitude, s.latitude, s.longitude),
+        }))
+        .sort((a, b) => {
+            const coverDiff = Number(b.datacoverage || 0) - Number(a.datacoverage || 0);
+            if (Math.abs(coverDiff) > 0.2) return coverDiff;
+            return a.distanceKm - b.distanceKm;
+        });
+}
+
+async function fetchNoaaStationData({ station, startDate, endDate }) {
+    const chunks = yearlyDateChunks(startDate, endDate);
+    const all = [];
+    for (const chunk of chunks) {
+        let offset = 1;
+        let total = Infinity;
+        while (offset <= total) {
+            const params = new URLSearchParams({
+                datasetid: NOAA_GHCND_DATASET,
+                stationid: station.id,
+                startdate: chunk.start,
+                enddate: chunk.end,
+                units: "metric",
+                limit: "1000",
+                offset: String(offset),
+            });
+            for (const datatype of [...NOAA_DATATYPE_IDS, "TMAX", "TMIN"]) {
+                params.append("datatypeid", datatype);
+            }
+            const data = await callNoaaCdo("data", params);
+            all.push(...(data.results || []));
+            total = data.metadata?.resultset?.count || 0;
+            if (!data.results || data.results.length === 0) break;
+            offset += data.results.length;
+        }
+    }
+    return all;
+}
+
+async function callNoaaCdo(kind, params) {
+    const url = `${NOAA_CDO_URL}/${kind}?${params.toString()}`;
+    const res = await apiFetch(url);
+    if (!res.ok) {
+        const text = await res.text();
+        let detail = text;
+        try {
+            const j = JSON.parse(text);
+            const upstream = j.detail?.body;
+            detail = upstream?.message || j.detail?.detail || j.detail || JSON.stringify(j);
+        } catch (_) {
+            // detail stays as raw text
+        }
+        throw new Error(`NOAA CDO HTTP ${res.status}: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`);
+    }
+    return await res.json();
+}
+
+function convertNoaaValue(kind, value) {
+    if (value == null || value === "") return null;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    let scaled = n;
+    let digits = 2;
+    if (kind === "TAVG" || kind === "TMAX" || kind === "TMIN") {
+        scaled = n * 0.1;
+    } else if (kind === "PRCP") {
+        scaled = n * 0.1;
+    } else if (kind === "AWND") {
+        scaled = n * 0.1;
+    } else if (kind === "TSUN") {
+        scaled = n / 60;
+    } else if (kind === "WDF") {
+        digits = 0;
+    }
+    return roundTo(scaled, digits);
+}
+
+function yearlyDateChunks(startDate, endDate) {
+    const startYear = Number(startDate.slice(0, 4));
+    const endYear = Number(endDate.slice(0, 4));
+    const chunks = [];
+    for (let year = startYear; year <= endYear; year++) {
+        const start = year === startYear ? startDate : `${year}-01-01`;
+        const end = year === endYear ? endDate : `${year}-12-31`;
+        chunks.push({ start, end });
+    }
+    return chunks;
+}
+
+function roundTo(value, digits = 2) {
+    if (value == null) return null;
+    return Number(Number(value).toFixed(digits));
+}
+
+function clampLat(v) {
+    return Math.max(-90, Math.min(90, v));
+}
+
+function clampLon(v) {
+    return Math.max(-180, Math.min(180, v));
+}
+
+function distanceKm(lat1, lon1, lat2, lon2) {
+    const rad = (d) => (d * Math.PI) / 180;
+    const r = 6371;
+    const dLat = rad(lat2 - lat1);
+    const dLon = rad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ----- Meteostat fetch (via backend) -----
@@ -2400,6 +2710,7 @@ function sourceBadgeLabel(source) {
     const labels = {
         meteostat_daily: "Meteostat Daily",
         meteostat_hourly_aggregated: "Hourly Aggregated",
+        noaa_cdo_ghcn_daily: "NOAA CDO / GHCN Daily",
         openmeteo_era5_reanalysis: "ERA5 Reanalysis",
         nasa_power_reanalysis: "NASA POWER Reanalysis",
     };
@@ -2408,6 +2719,7 @@ function sourceBadgeLabel(source) {
 
 function sourceBadgeClass(source) {
     if (source === "meteostat_daily") return "observed";
+    if (source === "noaa_cdo_ghcn_daily") return "observed";
     if (source === "meteostat_hourly_aggregated") return "aggregated";
     if (source && source.includes("reanalysis")) return "reanalysis";
     return "";
@@ -2457,6 +2769,25 @@ function describeResult(result) {
             reanalysisNote +
             coverageNote +
             bfNote
+        );
+    }
+    if (result.source === "noaa") {
+        const locDesc = locationDescription(result.meta.location, result.meta.city);
+        const s = result.meta.station || {};
+        const coverageNote = result.meta.coverage
+            ? ` - ${describeCoverage(result.meta.coverage)}`
+            : "";
+        const dist = Number.isFinite(Number(s.distanceKm))
+            ? `, ${Number(s.distanceKm).toFixed(1)} km dari lokasi`
+            : "";
+        return (
+            `${locDesc}` +
+            ` - Stasiun NOAA: ${s.name || s.id || "-"} (${s.id || "-"}${dist})` +
+            ` - Periode: ${result.meta.startDate} to ${result.meta.endDate}` +
+            ` - Sumber: NOAA CDO / GHCN Daily (observasi stasiun)` +
+            ` - Output: ${outputLabel}` +
+            ` - Total baris: ${result.rows.length}` +
+            coverageNote
         );
     }
     const c = result.meta.city;
@@ -2718,6 +3049,9 @@ function roundChart(value) {
 
 function chartLocationLabel(result) {
     if (result.source === "meteostat" && result.meta.station) {
+        return result.meta.station.name;
+    }
+    if (result.source === "noaa" && result.meta.station) {
         return result.meta.station.name;
     }
     if (result.meta.location) {
@@ -3111,6 +3445,56 @@ function buildMetaRows(result) {
             ["Diunduh pada", new Date().toISOString()],
         ];
     }
+    if (result.source === "noaa") {
+        const s = result.meta.station || {};
+        const locRows = locationRows(result.meta.location, result.meta.city);
+        const coverage = result.meta.coverage;
+        const sourceCounts = result.meta.sourceCounts || coverage?.sourceCounts || {};
+        const sourceSummary = Object.entries(sourceCounts)
+            .map(([source, count]) => `${source}: ${count}`)
+            .join(" | ");
+        const missingYears = coverage
+            ? Object.entries(coverage.missingByYear || {})
+                .map(([year, days]) => `${year}: ${days} hari`)
+                .join(" | ") || "tidak ada"
+            : "";
+        const distance = Number.isFinite(Number(s.distanceKm))
+            ? `${Number(s.distanceKm).toFixed(2)} km`
+            : "";
+        const tempNote = result.meta.tavgFromMinMax > 0
+            ? `${result.meta.tavgFromMinMax} hari suhu rata-rata dihitung dari (TMAX + TMIN) / 2 karena TAVG kosong.`
+            : "Suhu rata-rata memakai datatype TAVG bila tersedia.";
+        return [
+            ["Field", "Value"],
+            ["Sumber", "NOAA CDO / GHCN Daily (www.ncei.noaa.gov/cdo-web/api/v2)"],
+            ["Dataset", result.meta.dataset || NOAA_GHCND_DATASET],
+            ...locRows,
+            ["Stasiun NOAA", s.name || ""],
+            ["Station ID", s.id || ""],
+            ["Latitude stasiun", s.latitude ?? ""],
+            ["Longitude stasiun", s.longitude ?? ""],
+            ["Elevasi stasiun (m)", s.elevation ?? ""],
+            ["Jarak stasiun ke lokasi", distance],
+            ["Periode stasiun", [s.mindate, s.maxdate].filter(Boolean).join(" sampai ")],
+            ["Tanggal mulai", result.meta.startDate],
+            ["Tanggal akhir", result.meta.endDate],
+            ["Granularitas", "daily"],
+            ["Satuan kecepatan angin", "m/s"],
+            ["Variabel", variableList],
+            ["Datatype tersedia", (result.meta.datatypesFound || []).join(", ")],
+            ["Kelengkapan data", coverage ? `${coverage.available}/${coverage.expected} hari (${coverage.percent}%)` : ""],
+            ["Tahun bolong", missingYears],
+            ["Sumber per baris", sourceSummary],
+            [
+                "Catatan NOAA",
+                "NOAA CDO memakai observasi stasiun GHCN Daily terdekat dari lokasi. " +
+                    "Tidak semua stasiun melaporkan TAVG, AWND, WDF2/WDF5, atau TSUN; " +
+                    "kolom kosong berarti parameter tidak tersedia pada tanggal tersebut.",
+            ],
+            ["Catatan suhu", tempNote],
+            ["Diunduh pada", new Date().toISOString()],
+        ];
+    }
     const c = result.meta.city;
     const loc = result.meta.location;
     const locRows = locationRows(loc, c);
@@ -3144,6 +3528,10 @@ function buildFilename(result, outputMode = "daily") {
     if (result.source === "meteostat") {
         const s = result.meta.station;
         return `weather_meteostat_${safe(s.wmo || s.id)}_${start}_to_${end}_${suffix}.xlsx`;
+    }
+    if (result.source === "noaa") {
+        const s = result.meta.station || {};
+        return `weather_noaa_ghcnd_${safe(s.id || s.name || "station")}_${start}_to_${end}_${suffix}.xlsx`;
     }
     const loc = result.meta.location;
     let label = result.meta.city?.name || "lokasi";
@@ -3309,6 +3697,13 @@ function windroseTitle(result, mode) {
             ` - ${result.meta.startDate} to ${result.meta.endDate}`
         );
     }
+    if (result.source === "noaa") {
+        const s = result.meta.station || {};
+        return (
+            `Windrose (${tag}) - ${s.name || s.id || "NOAA GHCN"} (NOAA CDO)` +
+            ` - ${result.meta.startDate} to ${result.meta.endDate}`
+        );
+    }
     const c = result.meta.city;
     return `Windrose (${tag}) - ${c.name} - ${result.meta.startDate} to ${result.meta.endDate}`;
 }
@@ -3343,6 +3738,10 @@ function windroseFilename(result) {
     }
     if (result.source === "power") {
         return `windrose_power_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+    }
+    if (result.source === "noaa") {
+        const s = result.meta.station || {};
+        return `windrose_noaa_ghcnd_${safe(s.id || s.name || "station")}_${result.meta.startDate}_to_${result.meta.endDate}`;
     }
     return `windrose_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
 }
