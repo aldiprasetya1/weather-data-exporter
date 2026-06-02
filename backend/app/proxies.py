@@ -9,6 +9,7 @@ gate to apply uniformly across all three sources.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -26,12 +27,27 @@ _OPENMETEO_ROUTES = {
 }
 
 _POWER_DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
+_NOAA_CDO_BASE = "https://www.ncei.noaa.gov/cdo-web/api/v2"
+_NOAA_CDO_ROUTES = {
+    "datasets",
+    "datacategories",
+    "datatypes",
+    "locationcategories",
+    "locations",
+    "stations",
+    "data",
+}
+_NOAA_CDO_TOKEN = os.environ.get("NOAA_CDO_TOKEN", "").strip()
 
 
-async def _proxy_get(url: str, params: list[tuple[str, str]]) -> Any:
+async def _proxy_get(
+    url: str,
+    params: list[tuple[str, str]],
+    headers: dict[str, str] | None = None,
+) -> Any:
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
         try:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, headers=headers)
         except httpx.HTTPError as exc:
             raise HTTPException(
                 status_code=502, detail=f"Upstream request failed: {exc}"
@@ -70,3 +86,27 @@ async def openmeteo_proxy(kind: str, request: Request) -> Any:
 async def power_proxy(request: Request) -> Any:
     params = list(request.query_params.multi_items())
     return await _proxy_get(_POWER_DAILY_URL, params)
+
+
+@router.get("/api/noaa/cdo/{kind}")
+async def noaa_cdo_proxy(kind: str, request: Request) -> Any:
+    if kind not in _NOAA_CDO_ROUTES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown NOAA CDO endpoint '{kind}'. "
+            f"Allowed: {sorted(_NOAA_CDO_ROUTES)}",
+        )
+    if not _NOAA_CDO_TOKEN:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "NOAA_CDO_TOKEN belum dikonfigurasi di environment backend. "
+                "Tambahkan token NOAA CDO di Vercel Environment Variables."
+            ),
+        )
+    params = list(request.query_params.multi_items())
+    return await _proxy_get(
+        f"{_NOAA_CDO_BASE}/{kind}",
+        params,
+        headers={"token": _NOAA_CDO_TOKEN},
+    )
