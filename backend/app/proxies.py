@@ -10,10 +10,12 @@ gate to apply uniformly across all three sources.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 router = APIRouter(tags=["proxies"])
 
@@ -28,6 +30,7 @@ _OPENMETEO_ROUTES = {
 
 _POWER_DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 _NOAA_CDO_BASE = "https://www.ncei.noaa.gov/cdo-web/api/v2"
+_NOAA_GHCND_BULK_BASE = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/all"
 _NOAA_CDO_ROUTES = {
     "datasets",
     "datacategories",
@@ -38,6 +41,7 @@ _NOAA_CDO_ROUTES = {
     "data",
 }
 _NOAA_CDO_TOKEN = os.environ.get("NOAA_CDO_TOKEN", "").strip()
+_NOAA_GHCND_STATION_RE = re.compile(r"^[A-Z0-9_:-]{3,32}$")
 
 
 async def _proxy_get(
@@ -66,6 +70,22 @@ async def _proxy_get(
         return resp.json()
     except ValueError:
         return resp.text
+
+
+async def _proxy_text(url: str, params: list[tuple[str, str]] | None = None) -> str:
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+        try:
+            resp = await client.get(url, params=params or [])
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Upstream request failed: {exc}"
+            ) from exc
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=resp.status_code if 400 <= resp.status_code < 500 else 502,
+            detail={"upstream": url, "status": resp.status_code, "body": resp.text[:500]},
+        )
+    return resp.text
 
 
 @router.get("/api/openmeteo/{kind}")
@@ -110,3 +130,11 @@ async def noaa_cdo_proxy(kind: str, request: Request) -> Any:
         params,
         headers={"token": _NOAA_CDO_TOKEN},
     )
+
+
+@router.get("/api/noaa/ghcnd/{station_id}.dly", response_class=PlainTextResponse)
+async def noaa_ghcnd_daily_file(station_id: str) -> str:
+    station = station_id.replace("GHCND:", "").upper()
+    if not _NOAA_GHCND_STATION_RE.match(station):
+        raise HTTPException(status_code=400, detail="Invalid NOAA station id")
+    return await _proxy_text(f"{_NOAA_GHCND_BULK_BASE}/{station}.dly")
