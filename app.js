@@ -196,10 +196,9 @@ function setHiddenById(id, hidden) {
 function refreshAuthBar() {
     const p = state.auth.profile;
     const lab = document.getElementById("auth-label");
-    if (!lab) return;
     const logout = document.getElementById("logout-btn");
     if (!p) {
-        lab.textContent = "Token diminta saat mengunduh file.";
+        if (lab) lab.textContent = "";
         if (logout) logout.hidden = true;
         refreshProfileMenu();
         refreshDashboardToken();
@@ -210,7 +209,7 @@ function refreshAuthBar() {
     const expStr = exp
         ? exp.toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })
         : "?";
-    lab.textContent = `Token: ${p.label} - sisa ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download - berakhir ${expStr}`;
+    if (lab) lab.textContent = "";
     refreshProfileMenu();
     refreshDashboardToken();
 }
@@ -225,7 +224,7 @@ function refreshProfileMenu() {
         quota.textContent = "Kuota belum tersedia.";
         return;
     }
-    email.textContent = p.email || p.label || "Akun token";
+    email.textContent = p.label || p.email || "Akun token";
     quota.textContent = `Sisa kuota: ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download`;
 }
 
@@ -771,15 +770,6 @@ document.addEventListener("DOMContentLoaded", () => {
             profileMenu.hidden = true;
         });
     }
-    const profileTokenBtn = document.getElementById("profile-token-btn");
-    if (profileTokenBtn) {
-        profileTokenBtn.addEventListener("click", () => {
-            const menu = document.getElementById("profile-menu");
-            if (menu) menu.hidden = true;
-            focusDownloadAccessCard();
-        });
-    }
-
     // Data preview is open. Subscription token is consumed only when downloading files.
     loadAuth();
     if (state.auth.profile && isAuthExpired(state.auth.profile)) clearAuth();
@@ -853,6 +843,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!/^\d{4}$/.test(year || "")) return;
             els.startDate.value = `${year}-01-01`;
             els.endDate.value = `${year}-12-31`;
+            setActivePeriodPreset(btn);
             showStatus(`Rentang unduh data tahun ${year} siap dipakai.`, "info");
         });
     });
@@ -860,6 +851,7 @@ document.addEventListener("DOMContentLoaded", () => {
         els.baseline5yrBtn.addEventListener("click", () => {
             els.startDate.value = "2021-01-01";
             els.endDate.value = "2025-12-31";
+            setActivePeriodPreset(els.baseline5yrBtn);
             showStatus("Rentang unduh data 2021 - 2025 siap dipakai.", "info");
         });
     }
@@ -867,9 +859,13 @@ document.addEventListener("DOMContentLoaded", () => {
         els.baselineBtn.addEventListener("click", () => {
             els.startDate.value = "2016-01-01";
             els.endDate.value = "2025-12-31";
+            setActivePeriodPreset(els.baselineBtn);
             showStatus("Rentang unduh data 2016 - 2025 siap dipakai.", "info");
         });
     }
+    [els.startDate, els.endDate].forEach((input) => {
+        input?.addEventListener("input", clearActivePeriodPreset);
+    });
     if (els.outputMode) {
         els.outputMode.addEventListener("change", () => {
             state.outputMode = els.outputMode.value || "daily";
@@ -924,6 +920,17 @@ function applyTheme(theme) {
     if (btn) btn.setAttribute("aria-pressed", value === "light" ? "true" : "false");
     if (label) label.textContent = value === "light" ? "Terang" : "Gelap";
     if (icon) icon.textContent = value === "light" ? "☼" : "☾";
+}
+
+function setActivePeriodPreset(activeButton) {
+    clearActivePeriodPreset();
+    activeButton?.classList.add("preset-active");
+}
+
+function clearActivePeriodPreset() {
+    document
+        .querySelectorAll(".year-preset-btn, #baseline-5yr-btn, #baseline-btn")
+        .forEach((btn) => btn.classList.remove("preset-active"));
 }
 
 function currentChartTheme() {
@@ -2198,25 +2205,78 @@ async function fetchNoaaCdo({ location, startDate, endDate }) {
         );
     }
 
-    let selected = null;
-    let observations = [];
+    let best = null;
     let stationAttempts = 0;
-    for (const station of stations.slice(0, 8)) {
+    for (const station of stations.slice(0, 6)) {
         stationAttempts += 1;
         const data = await fetchNoaaStationData({ station, startDate, endDate });
-        if (data.length) {
-            selected = station;
-            observations = data;
+        if (!data.length) continue;
+        const parsed = buildNoaaRowsFromObservations({
+            observations: data,
+            startDate,
+            endDate,
+        });
+        if (!parsed.rows.length) continue;
+        const distance = distanceKm(target.latitude, target.longitude, station.latitude, station.longitude);
+        const score = scoreNoaaCandidate(parsed, distance);
+        const candidate = { station, parsed, score, distance };
+        if (!best || candidate.score > best.score) best = candidate;
+        if (
+            parsed.counts.AWND > 0 &&
+            parsed.counts.WDF > 0 &&
+            parsed.counts.TSUN > 0 &&
+            parsed.coverage.percent >= 80
+        ) {
             break;
         }
     }
-    if (!selected) {
+    if (!best) {
         throw new Error(
             "NOAA CDO menemukan kandidat stasiun, tetapi tidak ada observasi harian " +
             "untuk parameter utama pada periode tersebut."
         );
     }
+    const selected = {
+        ...best.station,
+        distanceKm: best.distance,
+    };
+    const {
+        headers,
+        rows,
+        windRows,
+        sourceRows,
+        coverage,
+        datatypesFound,
+        tavgFromMinMax,
+        counts,
+    } = best.parsed;
 
+    return {
+        source: "noaa",
+        headers,
+        rows,
+        windRows,
+        meta: {
+            kind: "noaa",
+            city: target,
+            location,
+            station: selected,
+            stationAttempts,
+            startDate,
+            endDate,
+            granularity: "daily",
+            dataset: NOAA_GHCND_DATASET,
+            datatypesFound: Array.from(datatypesFound).sort(),
+            tavgFromMinMax,
+            dataCounts: counts,
+            rowSources: sourceRows,
+            sourceCounts: { noaa_cdo_ghcn_daily: rows.length },
+            coverage,
+        },
+    };
+}
+
+function buildNoaaRowsFromObservations({ observations, startDate, endDate }) {
     const byDate = new Map();
     const sourceRows = [];
     for (const item of observations) {
@@ -2234,6 +2294,7 @@ async function fetchNoaaCdo({ location, startDate, endDate }) {
     const windRows = [];
     let tavgFromMinMax = 0;
     const datatypesFound = new Set();
+    const counts = { TAVG: 0, PRCP: 0, AWND: 0, WDF: 0, TSUN: 0 };
     for (const date of Array.from(byDate.keys()).sort()) {
         const raw = byDate.get(date);
         Object.keys(raw).forEach((k) => datatypesFound.add(k));
@@ -2253,40 +2314,41 @@ async function fetchNoaaCdo({ location, startDate, endDate }) {
         if (row.slice(1).some((v) => v != null)) {
             rows.push(row);
             sourceRows.push("noaa_cdo_ghcn_daily");
+            if (temp != null) counts.TAVG += 1;
+            if (prcp != null) counts.PRCP += 1;
+            if (awnd != null) counts.AWND += 1;
+            if (wdf != null) counts.WDF += 1;
+            if (tsun != null) counts.TSUN += 1;
             if (wdf != null && awnd != null) windRows.push({ dir: wdf, spd: awnd });
         }
     }
-
     const coverage = buildCoverage({
         startDate,
         endDate,
         rows,
         rowSources: sourceRows,
     });
-    selected.distanceKm = distanceKm(target.latitude, target.longitude, selected.latitude, selected.longitude);
-
     return {
-        source: "noaa",
         headers,
         rows,
         windRows,
-        meta: {
-            kind: "noaa",
-            city: target,
-            location,
-            station: selected,
-            stationAttempts,
-            startDate,
-            endDate,
-            granularity: "daily",
-            dataset: NOAA_GHCND_DATASET,
-            datatypesFound: Array.from(datatypesFound).sort(),
-            tavgFromMinMax,
-            rowSources: sourceRows,
-            sourceCounts: { noaa_cdo_ghcn_daily: rows.length },
-            coverage,
-        },
+        sourceRows,
+        coverage,
+        datatypesFound,
+        tavgFromMinMax,
+        counts,
     };
+}
+
+function scoreNoaaCandidate(parsed, distance) {
+    const c = parsed.counts || {};
+    const keyCompleteness =
+        Math.min(c.TAVG || 0, parsed.rows.length) +
+        Math.min(c.PRCP || 0, parsed.rows.length) +
+        (c.AWND || 0) * 3 +
+        (c.WDF || 0) * 3 +
+        (c.TSUN || 0) * 3;
+    return keyCompleteness + parsed.coverage.percent * 10 - Math.min(distance || 0, 500);
 }
 
 function representativeLocationPoint(location) {
@@ -2893,9 +2955,10 @@ function renderPreview(result) {
     table.innerHTML = "";
     const thead = document.createElement("thead");
     const trh = document.createElement("tr");
-    result.headers.forEach((h) => {
+    result.headers.forEach((h, idx) => {
         const th = document.createElement("th");
         th.textContent = h;
+        if (idx > 0) th.className = "numeric-col";
         trh.appendChild(th);
     });
     thead.appendChild(trh);
@@ -2904,9 +2967,12 @@ function renderPreview(result) {
     const tbody = document.createElement("tbody");
     result.rows.slice(0, 50).forEach((r) => {
         const tr = document.createElement("tr");
-        r.forEach((cell) => {
+        r.forEach((cell, idx) => {
             const td = document.createElement("td");
-            td.textContent = cell == null ? "" : cell;
+            const empty = cell == null || cell === "";
+            td.textContent = empty ? "—" : cell;
+            if (idx > 0) td.classList.add("numeric-col");
+            if (empty) td.classList.add("empty-cell");
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -2948,6 +3014,19 @@ function renderPreviewInfo(result) {
         badge.className = "source-badge reanalysis";
         badge.textContent = "Reanalysis/model, bukan observasi stasiun";
         chips.appendChild(badge);
+    }
+
+    if (result.source === "noaa" && result.meta.dataCounts) {
+        const missing = [];
+        if (!result.meta.dataCounts.AWND) missing.push("AWND");
+        if (!result.meta.dataCounts.WDF) missing.push("WDF2/WDF5");
+        if (!result.meta.dataCounts.TSUN) missing.push("TSUN");
+        if (missing.length) {
+            const badge = document.createElement("span");
+            badge.className = "source-badge audit-warn";
+            badge.textContent = `NOAA tidak melaporkan ${missing.join(", ")} di stasiun ini`;
+            chips.appendChild(badge);
+        }
     }
 
     if (chips.children.length) {
@@ -3713,6 +3792,14 @@ function buildMetaRows(result) {
         const tempNote = result.meta.tavgFromMinMax > 0
             ? `${result.meta.tavgFromMinMax} hari suhu rata-rata dihitung dari (TMAX + TMIN) / 2 karena TAVG kosong.`
             : "Suhu rata-rata memakai datatype TAVG bila tersedia.";
+        const counts = result.meta.dataCounts || {};
+        const countSummary = [
+            `TAVG: ${counts.TAVG || 0}`,
+            `PRCP: ${counts.PRCP || 0}`,
+            `AWND: ${counts.AWND || 0}`,
+            `WDF2/WDF5: ${counts.WDF || 0}`,
+            `TSUN: ${counts.TSUN || 0}`,
+        ].join(" | ");
         return [
             ["Field", "Value"],
             ["Sumber", "NOAA CDO / GHCN Daily (www.ncei.noaa.gov/cdo-web/api/v2)"],
@@ -3731,6 +3818,7 @@ function buildMetaRows(result) {
             ["Satuan kecepatan angin", "m/s"],
             ["Variabel", variableList],
             ["Datatype tersedia", (result.meta.datatypesFound || []).join(", ")],
+            ["Jumlah nilai per datatype", countSummary],
             ["Kelengkapan data", coverage ? `${coverage.available}/${coverage.expected} hari (${coverage.percent}%)` : ""],
             ["Tahun bolong", missingYears],
             ["Sumber per baris", sourceSummary],
