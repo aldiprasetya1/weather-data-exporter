@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260604-dashboard-token" />
+    <link rel="stylesheet" href="styles.css?v=20260604-beginner-flow" />
     <script>
         (() => {
             const saved = localStorage.getItem("wde.theme");
@@ -99,95 +99,153 @@
             <aside class="workflow-sidebar" aria-label="Alur kerja export data">
                 <div class="sidebar-title-row">
                     <div>
-                        <p class="workflow-kicker">Climate Data Platform</p>
-                        <h2>Dashboard Export</h2>
+                        <p class="workflow-kicker">Panduan Download</p>
+                        <h2>Mulai Dari Sini</h2>
                     </div>
                     <button id="sidebar-collapse-btn" class="sidebar-collapse-btn" type="button" aria-label="Ciutkan sidebar">Menu</button>
                 </div>
                 <ol class="workflow-steps">
                     <li>
-                        <span>01</span>
-                        <div>
-                            <strong>Dashboard Export</strong>
-                            <small>Ringkasan, token, dan status kuota</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="overview">
+                            <span>01</span>
+                            <div>
+                                <strong>Cara download</strong>
+                                <small>Lihat ringkasan alur kerja</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>02</span>
-                        <div>
-                            <strong>Sumber Data</strong>
-                            <small>Meteostat, ERA5, NASA POWER, atau NOAA CDO</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="source">
+                            <span>02</span>
+                            <div>
+                                <strong>Pilih sumber data</strong>
+                                <small>Rekomendasi untuk pemula tersedia</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>03</span>
-                        <div>
-                            <strong>Lokasi & Koordinat</strong>
-                            <small>Stasiun, kota, pin, area, atau koordinat</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="location">
+                            <span>03</span>
+                            <div>
+                                <strong>Pilih lokasi</strong>
+                                <small>Kota, stasiun, peta, atau koordinat</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>04</span>
-                        <div>
-                            <strong>Periode Data</strong>
-                            <small>Preset tahunan, 5 tahun, atau 2016 - 2025</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="period">
+                            <span>04</span>
+                            <div>
+                                <strong>Tentukan periode</strong>
+                                <small>Pilih tahun atau rentang siap pakai</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>05</span>
-                        <div>
-                            <strong>Audit Kelengkapan</strong>
-                            <small>Hari tersedia, persen, dan data kosong</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="output">
+                            <span>05</span>
+                            <div>
+                                <strong>Pilih output</strong>
+                                <small>Data harian atau rekap bulanan</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>06</span>
-                        <div>
-                            <strong>Preview Data</strong>
-                            <small>50 baris pertama dan metadata sumber</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="preview">
+                            <span>06</span>
+                            <div>
+                                <strong>Cek pratinjau</strong>
+                                <small>Pastikan data tersedia sebelum download</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>07</span>
-                        <div>
-                            <strong>Grafik & Windrose</strong>
-                            <small>Grafik parameter dan arah angin</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="charts">
+                            <span>07</span>
+                            <div>
+                                <strong>Grafik & windrose</strong>
+                                <small>Tampilkan visualisasi bila dibutuhkan</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>08</span>
-                        <div>
-                            <strong>Riwayat Download</strong>
-                            <small>Kuota download dan masa aktif token</small>
-                        </div>
+                        <button type="button" class="workflow-link" data-guide-target="token">
+                            <span>08</span>
+                            <div>
+                                <strong>Masukkan token</strong>
+                                <small>Token dipakai saat download</small>
+                            </div>
+                        </button>
                     </li>
                     <li>
-                        <span>09</span>
-                        <div>
-                            <strong>Admin</strong>
-                            <small>Kelola token dan masa langganan</small>
-                        </div>
+                        <a class="workflow-link" href="/admin">
+                            <span>09</span>
+                            <div>
+                                <strong>Admin</strong>
+                                <small>Kelola token pelanggan</small>
+                            </div>
+                        </a>
                     </li>
                 </ol>
                 <div class="sidebar-panel">
-                    <strong>Standar Konsultan</strong>
-                    <p>Setiap export mencatat sumber data: Meteostat Daily, Hourly Aggregated, NOAA CDO, atau reanalysis/model.</p>
+                    <strong>Tips untuk pemula</strong>
+                    <p>Mulai dari Open-Meteo bila hanya butuh data cepat untuk lokasi mana saja. Gunakan Meteostat/NOAA bila perlu observasi stasiun.</p>
                 </div>
             </aside>
 
             <div class="dashboard-workspace">
         <section class="dashboard-overview" aria-label="Ringkasan dashboard export">
-            <div class="dashboard-topbar card">
+            <div id="guide-overview" class="dashboard-topbar card guide-section">
                 <div>
                     <p class="workflow-kicker">Angin Berhembus</p>
-                    <h2>Dashboard Export Meteorologi</h2>
-                    <p class="muted">Kelola sumber data, audit kelengkapan, grafik, dan akses download dalam satu alur kerja.</p>
+                    <h2>Download Data Cuaca Tanpa Ribet</h2>
+                    <p class="muted">Ikuti urutan di bawah: pilih sumber, pilih lokasi, tentukan periode, cek pratinjau, lalu download file Excel dan PNG.</p>
                 </div>
                 <div class="quick-search">
                     <label for="dashboard-search">Cari cepat</label>
                     <input id="dashboard-search" type="search" placeholder="Cari kota atau stasiun..." autocomplete="off" />
                 </div>
             </div>
+
+            <section class="card beginner-guide">
+                <div class="guide-heading">
+                    <p class="workflow-kicker">Alur Step By Step</p>
+                    <h2>Cara download data</h2>
+                    <p class="muted">Untuk pengguna awam, cukup ikuti 6 langkah ini dari atas ke bawah.</p>
+                </div>
+                <div class="guide-cards">
+                    <article>
+                        <span>1</span>
+                        <strong>Pilih sumber data</strong>
+                        <p>Untuk penggunaan umum, pilih Open-Meteo. Untuk data stasiun, pilih Meteostat atau NOAA CDO.</p>
+                    </article>
+                    <article>
+                        <span>2</span>
+                        <strong>Pilih lokasi</strong>
+                        <p>Ketik nama kota, pilih stasiun, klik peta, atau masukkan koordinat manual.</p>
+                    </article>
+                    <article>
+                        <span>3</span>
+                        <strong>Pilih periode</strong>
+                        <p>Klik tahun tertentu, Data 2021 - 2025, atau Data 2016 - 2025.</p>
+                    </article>
+                    <article>
+                        <span>4</span>
+                        <strong>Klik Pratinjau Data</strong>
+                        <p>Periksa jumlah hari tersedia, persentase kelengkapan, dan data yang kosong.</p>
+                    </article>
+                    <article>
+                        <span>5</span>
+                        <strong>Tampilkan grafik</strong>
+                        <p>Gunakan grafik dan windrose jika ingin menyertakan visualisasi laporan.</p>
+                    </article>
+                    <article>
+                        <span>6</span>
+                        <strong>Masukkan token & download</strong>
+                        <p>Masukkan token ABS, lalu klik Download .xlsx dan semua PNG.</p>
+                    </article>
+                </div>
+            </section>
 
             <div class="summary-grid">
                 <article class="metric-card">
@@ -212,7 +270,7 @@
                 </article>
             </div>
 
-            <section id="download-access-card" class="card download-access-card">
+            <section id="download-access-card" class="card download-access-card guide-section">
                 <div class="access-copy">
                     <p class="workflow-kicker">Akses Download</p>
                     <h2>Token Berlangganan</h2>
@@ -235,8 +293,9 @@
         </section>
 
         <form id="weather-form">
-            <section class="card">
-                <h2>1. Sumber Data</h2>
+            <section id="guide-source" class="card guide-section">
+                <h2>1. Pilih sumber data</h2>
+                <p class="step-help">Bingung memilih? Gunakan <strong>Open-Meteo</strong> untuk kebutuhan umum dan lokasi mana saja. Gunakan <strong>Meteostat</strong> atau <strong>NOAA CDO</strong> bila Anda membutuhkan data observasi stasiun.</p>
                 <div class="radio-row">
                     <label class="radio">
                         <input type="radio" name="source" value="openmeteo" checked />
@@ -269,8 +328,9 @@
                 </div>
             </section>
 
-            <section id="city-section" class="card">
-                <h2>2. Pilih Lokasi</h2>
+            <section id="city-section" class="card guide-section">
+                <h2>2. Pilih lokasi</h2>
+                <p class="step-help">Cara termudah adalah mengetik nama kota. Jika butuh lokasi spesifik, gunakan peta atau input koordinat manual.</p>
                 <div class="tabs" role="tablist" aria-label="Cara pilih lokasi">
                     <button
                         type="button"
@@ -420,8 +480,9 @@
                 </div>
             </section>
 
-            <section id="station-section" class="card" hidden>
-                <h2>2. Pilih Stasiun</h2>
+            <section id="station-section" class="card guide-section" hidden>
+                <h2>2. Pilih stasiun</h2>
+                <p class="step-help">Ketik nama kota, nama bandara, kode WMO, atau kode ICAO. Pilih stasiun yang paling dekat dengan lokasi kajian.</p>
                 <div class="field">
                     <label for="station-search">Cari stasiun (nama / kota / kode WMO / ICAO)</label>
                     <input
@@ -438,8 +499,9 @@
                 </div>
             </section>
 
-            <section class="card">
-                <h2>3. Periode Waktu</h2>
+            <section id="guide-period" class="card guide-section">
+                <h2>3. Tentukan periode data</h2>
+                <p class="step-help">Untuk rona awal, biasanya pakai rentang 5 sampai 10 tahun. Gunakan tombol cepat agar tanggal otomatis terisi.</p>
                 <div class="row">
                     <div class="field">
                         <label for="start-date">Tanggal mulai</label>
@@ -508,8 +570,9 @@
                 </p>
             </section>
 
-            <section id="vars-section" class="card">
-                <h2>4. Output Excel</h2>
+            <section id="vars-section" class="card guide-section">
+                <h2>4. Pilih format output Excel</h2>
+                <p class="step-help">Pilih data harian jika ingin seluruh tanggal. Pilih rekap rata-rata per bulan jika ingin tabel laporan seperti dokumen kajian.</p>
                 <div class="field">
                     <label for="output-mode">Format output</label>
                     <select id="output-mode">
@@ -523,8 +586,9 @@
                 </div>
             </section>
 
-            <section class="card">
-                <h2>5. Variabel Cuaca</h2>
+            <section id="guide-output" class="card guide-section">
+                <h2>5. Variabel cuaca yang akan diunduh</h2>
+                <p class="step-help">Sistem otomatis menyiapkan lima variabel utama. Anda tidak perlu memilih satu per satu.</p>
                 <p class="muted">
                     Lima variabel harian yang diekspor (sama untuk semua sumber):
                     <strong>suhu rata-rata (deg C)</strong>,
@@ -569,24 +633,25 @@
             <div id="status" class="status" hidden></div>
         </form>
 
-        <section id="preview-section" class="card" hidden>
-            <h2>Pratinjau (50 baris pertama)</h2>
+        <section id="preview-section" class="card guide-section" hidden>
+            <h2>6. Pratinjau dan audit kelengkapan</h2>
+            <p class="step-help">Cek tabel ini sebelum download. Jika kelengkapan rendah atau banyak data kosong, coba sumber data lain atau periode berbeda.</p>
             <div id="preview-info" class="muted"></div>
             <div class="table-wrap">
                 <table id="preview-table"></table>
             </div>
         </section>
 
-        <section id="climate-chart-section" class="card" hidden>
+        <section id="climate-chart-section" class="card guide-section" hidden>
             <div class="windrose-header">
-                <h2>Grafik Rona Awal</h2>
+                <h2>7. Grafik rona awal</h2>
                 <button id="climate-chart-download" type="button" hidden>Unduh Semua PNG (.zip)</button>
             </div>
             <div id="climate-chart-info" class="muted"></div>
             <div id="climate-chart" class="windrose-chart"></div>
         </section>
 
-        <section id="windrose-section" class="card" hidden>
+        <section id="windrose-section" class="card guide-section" hidden>
             <div class="windrose-header">
                 <h2>Windrose</h2>
                 <button id="windrose-download" type="button" hidden>Unduh Semua PNG (.zip)</button>
@@ -617,6 +682,6 @@
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="config.js"></script>
-    <script src="app.js?v=20260604-dashboard-token"></script>
+    <script src="app.js?v=20260604-beginner-flow"></script>
 </body>
 </html>
