@@ -23,6 +23,7 @@ const ARCHIVE_URL = `${BACKEND_URL}/api/openmeteo/archive`;
 const POWER_URL = `${BACKEND_URL}/api/power/daily/point`;
 const NOAA_CDO_URL = `${BACKEND_URL}/api/noaa/cdo`;
 const NOAA_GHCND_DLY_URL = `${BACKEND_URL}/api/noaa/ghcnd`;
+const NOAA_GHCND_STATIONS_URL = `${BACKEND_URL}/api/noaa/ghcnd-stations`;
 const POWER_FILL = -999.0;
 
 const TOKEN_STORAGE_KEY = "wde.auth.token";
@@ -2194,11 +2195,13 @@ function powerDailyKeyToIso(t) {
 
 async function fetchNoaaCdo({ location, startDate, endDate }) {
     const target = representativeLocationPoint(location);
+    const warnings = [];
     const stations = await findNoaaStations({
         latitude: target.latitude,
         longitude: target.longitude,
         startDate,
         endDate,
+        warnings,
     });
     if (!stations.length) {
         throw new Error(
@@ -2211,7 +2214,15 @@ async function fetchNoaaCdo({ location, startDate, endDate }) {
     let stationAttempts = 0;
     for (const station of stations.slice(0, 6)) {
         stationAttempts += 1;
-        const cdoData = await fetchNoaaStationData({ station, startDate, endDate });
+        let cdoData = [];
+        try {
+            cdoData = await fetchNoaaStationData({ station, startDate, endDate });
+        } catch (err) {
+            warnings.push(
+                `CDO data gagal untuk ${station.id}: ${err?.message || err}. ` +
+                "Mencoba file NOAA GHCN Daily (.dly)."
+            );
+        }
         const dlyData = await fetchNoaaStationDlyData({ station, startDate, endDate });
         const data = mergeNoaaObservations(cdoData, dlyData);
         if (!data.length) continue;
@@ -2276,6 +2287,7 @@ async function fetchNoaaCdo({ location, startDate, endDate }) {
             rowSources: sourceRows,
             sourceCounts: countSourceRows(sourceRows),
             coverage,
+            warnings,
         },
     };
 }
@@ -2372,23 +2384,74 @@ function representativeLocationPoint(location) {
     };
 }
 
-async function findNoaaStations({ latitude, longitude, startDate, endDate }) {
+async function findNoaaStations({ latitude, longitude, startDate, endDate, warnings = [] }) {
+    const radii = [0.75, 2, 5, 10];
+    const found = new Map();
+    try {
+        for (const radius of radii) {
+            const params = new URLSearchParams({
+                datasetid: NOAA_GHCND_DATASET,
+                startdate: startDate,
+                enddate: endDate,
+                extent: [
+                    clampLat(latitude - radius),
+                    clampLon(longitude - radius),
+                    clampLat(latitude + radius),
+                    clampLon(longitude + radius),
+                ].join(","),
+                limit: "1000",
+            });
+            const data = await callNoaaCdo("stations", params);
+            for (const s of data.results || []) {
+                if (!Number.isFinite(Number(s.latitude)) || !Number.isFinite(Number(s.longitude))) continue;
+                found.set(s.id, {
+                    id: s.id,
+                    name: s.name || s.id,
+                    latitude: Number(s.latitude),
+                    longitude: Number(s.longitude),
+                    elevation: s.elevation ?? "",
+                    mindate: s.mindate || "",
+                    maxdate: s.maxdate || "",
+                    datacoverage: s.datacoverage ?? null,
+                });
+            }
+            if (found.size >= 8) break;
+        }
+    } catch (err) {
+        warnings.push(
+            `CDO stations gagal: ${err?.message || err}. ` +
+            "Mencoba daftar stasiun NOAA GHCN Daily bulk."
+        );
+    }
+    if (!found.size) {
+        const bulkStations = await findNoaaStationsFromBulk({ latitude, longitude });
+        for (const s of bulkStations) found.set(s.id, s);
+    }
+    return Array.from(found.values())
+        .map((s) => ({
+            ...s,
+            distanceKm: distanceKm(latitude, longitude, s.latitude, s.longitude),
+        }))
+        .sort((a, b) => {
+            const coverDiff = Number(b.datacoverage || 0) - Number(a.datacoverage || 0);
+            if (Math.abs(coverDiff) > 0.2) return coverDiff;
+            return a.distanceKm - b.distanceKm;
+        });
+}
+
+async function findNoaaStationsFromBulk({ latitude, longitude }) {
     const radii = [0.75, 2, 5, 10];
     const found = new Map();
     for (const radius of radii) {
         const params = new URLSearchParams({
-            datasetid: NOAA_GHCND_DATASET,
-            startdate: startDate,
-            enddate: endDate,
-            extent: [
-                clampLat(latitude - radius),
-                clampLon(longitude - radius),
-                clampLat(latitude + radius),
-                clampLon(longitude + radius),
-            ].join(","),
-            limit: "1000",
+            latitude: String(latitude),
+            longitude: String(longitude),
+            radius: String(radius),
+            limit: "100",
         });
-        const data = await callNoaaCdo("stations", params);
+        const res = await apiFetch(`${NOAA_GHCND_STATIONS_URL}?${params.toString()}`);
+        if (!res.ok) continue;
+        const data = await res.json();
         for (const s of data.results || []) {
             if (!Number.isFinite(Number(s.latitude)) || !Number.isFinite(Number(s.longitude))) continue;
             found.set(s.id, {
@@ -2404,16 +2467,7 @@ async function findNoaaStations({ latitude, longitude, startDate, endDate }) {
         }
         if (found.size >= 8) break;
     }
-    return Array.from(found.values())
-        .map((s) => ({
-            ...s,
-            distanceKm: distanceKm(latitude, longitude, s.latitude, s.longitude),
-        }))
-        .sort((a, b) => {
-            const coverDiff = Number(b.datacoverage || 0) - Number(a.datacoverage || 0);
-            if (Math.abs(coverDiff) > 0.2) return coverDiff;
-            return a.distanceKm - b.distanceKm;
-        });
+    return Array.from(found.values());
 }
 
 async function fetchNoaaStationData({ station, startDate, endDate }) {
@@ -3132,6 +3186,13 @@ function renderPreviewInfo(result) {
             badge.textContent = `NOAA tidak melaporkan ${missing.join(", ")} di stasiun ini`;
             chips.appendChild(badge);
         }
+    }
+
+    if (result.source === "noaa" && result.meta.warnings?.length) {
+        const badge = document.createElement("span");
+        badge.className = "source-badge audit-warn";
+        badge.textContent = "CDO sempat gagal; fallback NOAA GHCN dicoba";
+        chips.appendChild(badge);
     }
 
     if (chips.children.length) {
@@ -3909,6 +3970,7 @@ function buildMetaRows(result) {
             `WDF2/WDF5: ${counts.WDF || 0}`,
             `TSUN: ${counts.TSUN || 0}`,
         ].join(" | ");
+        const warningSummary = (result.meta.warnings || []).join(" | ");
         return [
             ["Field", "Value"],
             ["Sumber", "NOAA CDO API + NOAA GHCN Daily File"],
@@ -3931,6 +3993,7 @@ function buildMetaRows(result) {
             ["Kelengkapan data", coverage ? `${coverage.available}/${coverage.expected} hari (${coverage.percent}%)` : ""],
             ["Tahun bolong", missingYears],
             ["Sumber per baris", sourceSummary],
+            ["Peringatan akses data", warningSummary],
             [
                 "Catatan NOAA",
                 "NOAA memakai observasi stasiun GHCN Daily terdekat dari lokasi melalui CDO API dan file .dly resmi NCEI sebagai fallback. " +
