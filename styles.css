@@ -1565,3 +1565,256 @@ html[data-theme="light"] tr:nth-child(even) {
 html[data-theme="light"] footer {
     color: #64748b;
 }
+
+/* Dashboard input-token refinement */
+.dashboard-overview {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.dashboard-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+    align-items: end;
+    gap: 18px;
+    margin-bottom: 0;
+}
+
+.dashboard-topbar h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+}
+
+.quick-search {
+    display: grid;
+    gap: 6px;
+}
+
+.quick-search label,
+.access-form label {
+    color: #e4e4e7;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.quick-search input,
+.token-input-row input {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 12px;
+    color: #fafafa;
+    background: rgba(15, 15, 17, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 7px;
+    font: inherit;
+}
+
+.quick-search input:focus,
+.token-input-row input:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.metric-card {
+    min-height: 116px;
+    padding: 16px;
+    color: #fafafa;
+    background: rgba(24, 24, 27, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.20);
+    backdrop-filter: blur(10px);
+}
+
+.metric-card span {
+    display: block;
+    margin-bottom: 10px;
+    color: #a1a1aa;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.metric-card strong {
+    display: block;
+    color: #ffffff;
+    font-size: 22px;
+    line-height: 1.15;
+    word-break: break-word;
+}
+
+.metric-card small {
+    display: block;
+    margin-top: 8px;
+    color: #a1a1aa;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.download-access-card {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+    gap: 20px;
+    align-items: start;
+    margin-bottom: 0;
+}
+
+.download-access-card h2 {
+    margin-bottom: 6px;
+    font-size: 18px;
+}
+
+.access-form {
+    display: grid;
+    gap: 9px;
+}
+
+.token-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+}
+
+.token-input-row button {
+    min-height: 42px;
+    white-space: nowrap;
+}
+
+.token-quota-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    color: #d4d4d8;
+    background: rgba(39, 39, 42, 0.66);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.token-quota-panel strong {
+    color: #34d399;
+    white-space: nowrap;
+}
+
+.download-access-card .status {
+    margin-top: 0;
+}
+
+.sidebar-title-row {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sidebar-collapse-btn {
+    min-width: 54px;
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+.dashboard-shell.sidebar-collapsed {
+    grid-template-columns: 86px minmax(0, 1fr);
+}
+
+.dashboard-shell.sidebar-collapsed .workflow-sidebar {
+    padding: 14px 10px;
+}
+
+.dashboard-shell.sidebar-collapsed .workflow-kicker,
+.dashboard-shell.sidebar-collapsed .workflow-sidebar h2,
+.dashboard-shell.sidebar-collapsed .workflow-steps div,
+.dashboard-shell.sidebar-collapsed .sidebar-panel {
+    display: none;
+}
+
+.dashboard-shell.sidebar-collapsed .workflow-steps li {
+    grid-template-columns: 1fr;
+    justify-items: center;
+}
+
+.dashboard-shell.sidebar-collapsed .workflow-steps li > span {
+    width: 40px;
+    height: 40px;
+}
+
+html[data-theme="light"] .dashboard-topbar,
+html[data-theme="light"] .download-access-card,
+html[data-theme="light"] .metric-card {
+    color: #0f172a;
+    background: rgba(255, 255, 255, 0.92);
+    border-color: #dbe3ea;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .quick-search label,
+html[data-theme="light"] .access-form label {
+    color: #334155;
+}
+
+html[data-theme="light"] .quick-search input,
+html[data-theme="light"] .token-input-row input {
+    color: #0f172a;
+    background: #ffffff;
+    border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .metric-card span,
+html[data-theme="light"] .metric-card small {
+    color: #64748b;
+}
+
+html[data-theme="light"] .metric-card strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .token-quota-panel {
+    color: #334155;
+    background: #f8fafc;
+    border-color: #dbe3ea;
+}
+
+html[data-theme="light"] .token-quota-panel strong {
+    color: #0f766e;
+}
+
+@media (max-width: 1180px) {
+    .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .download-access-card {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .dashboard-topbar,
+    .summary-grid,
+    .token-input-row {
+        grid-template-columns: 1fr;
+    }
+
+    .token-quota-panel {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .dashboard-shell.sidebar-collapsed {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-shell.sidebar-collapsed .workflow-sidebar {
+        display: none;
+    }
+}
