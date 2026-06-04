@@ -202,6 +202,7 @@ function refreshAuthBar() {
         lab.textContent = "Token diminta saat mengunduh file.";
         if (logout) logout.hidden = true;
         refreshProfileMenu();
+        refreshDashboardToken();
         return;
     }
     if (logout) logout.hidden = false;
@@ -211,6 +212,7 @@ function refreshAuthBar() {
         : "?";
     lab.textContent = `Token: ${p.label} - sisa ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download - berakhir ${expStr}`;
     refreshProfileMenu();
+    refreshDashboardToken();
 }
 
 function refreshProfileMenu() {
@@ -225,6 +227,231 @@ function refreshProfileMenu() {
     }
     email.textContent = p.email || p.label || "Akun token";
     quota.textContent = `Sisa kuota: ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download`;
+}
+
+function refreshDashboardToken() {
+    const input = document.getElementById("dashboard-token-input");
+    const label = document.getElementById("dashboard-token-label");
+    const quota = document.getElementById("dashboard-token-quota");
+    const metricQuota = document.getElementById("metric-quota");
+    const metricQuotaDetail = document.getElementById("metric-quota-detail");
+    const p = state.auth.profile;
+    if (input && state.auth.token && input.value !== state.auth.token) {
+        input.value = state.auth.token;
+    }
+    if (!label || !quota) return;
+    if (!p) {
+        label.textContent = "Belum ada token aktif.";
+        quota.textContent = "Kuota: -";
+        if (metricQuota) metricQuota.textContent = "Belum masuk";
+        if (metricQuotaDetail) metricQuotaDetail.textContent = "Masukkan token untuk melihat kuota";
+        return;
+    }
+    const exp = p.expires_at ? new Date(p.expires_at) : null;
+    const expStr = exp
+        ? exp.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })
+        : "-";
+    label.textContent = `${p.label || "Token aktif"} - berlaku sampai ${expStr}`;
+    quota.textContent = `Kuota: ${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"} download`;
+    if (metricQuota) metricQuota.textContent = `${p.remaining_downloads ?? "?"}/${p.quota_limit ?? "?"}`;
+    if (metricQuotaDetail) metricQuotaDetail.textContent = `Berlaku sampai ${expStr}`;
+}
+
+function showDashboardTokenStatus(msg, type = "info") {
+    const el = document.getElementById("dashboard-token-status");
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = msg;
+    el.className = `status ${type}`;
+}
+
+function dashboardTokenValue() {
+    const input = document.getElementById("dashboard-token-input");
+    return (input?.value || state.auth.token || "").trim();
+}
+
+async function validateDashboardToken({ silent = false } = {}) {
+    const token = dashboardTokenValue();
+    if (!token) {
+        showDashboardTokenStatus("Masukkan token ABS terlebih dahulu.", "error");
+        focusDownloadAccessCard();
+        return null;
+    }
+    if (!silent) showDashboardTokenStatus("Memvalidasi token dan membaca kuota...", "loading");
+    const profile = await loginWithToken(token);
+    saveAuth(token, profile);
+    refreshAuthBar();
+    if (!silent) {
+        showDashboardTokenStatus(
+            `Token aktif. Sisa kuota ${profile.remaining_downloads}/${profile.quota_limit} download.`,
+            "success"
+        );
+    }
+    return profile;
+}
+
+async function loginWithToken(token) {
+    const cleaned = String(token || "").trim();
+    if (!cleaned) throw new Error("Token kosong.");
+    const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cleaned }),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+        let detail = text;
+        try {
+            detail = JSON.parse(text).detail || text;
+        } catch (_) {}
+        throw new Error(detail || "Token tidak valid.");
+    }
+    const profile = JSON.parse(text);
+    if (profile.revoked || profile.expired) {
+        throw new Error("Token sudah dicabut atau kedaluwarsa.");
+    }
+    return profile;
+}
+
+function focusDownloadAccessCard() {
+    const card = document.getElementById("download-access-card");
+    const input = document.getElementById("dashboard-token-input");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (input) setTimeout(() => input.focus(), 180);
+}
+
+function setupDashboardControls() {
+    const validateBtn = document.getElementById("dashboard-token-validate");
+    const clearBtn = document.getElementById("dashboard-token-clear");
+    const tokenInput = document.getElementById("dashboard-token-input");
+    const quickSearch = document.getElementById("dashboard-search");
+    const collapseBtn = document.getElementById("sidebar-collapse-btn");
+
+    if (validateBtn) {
+        validateBtn.addEventListener("click", async () => {
+            try {
+                await validateDashboardToken();
+            } catch (err) {
+                showDashboardTokenStatus(`Token gagal: ${friendlyErrorMessage(err)}`, "error");
+            }
+        });
+    }
+    if (tokenInput) {
+        tokenInput.addEventListener("keydown", async (event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            try {
+                await validateDashboardToken();
+            } catch (err) {
+                showDashboardTokenStatus(`Token gagal: ${friendlyErrorMessage(err)}`, "error");
+            }
+        });
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+            clearAuth();
+            if (tokenInput) tokenInput.value = "";
+            refreshAuthBar();
+            showDashboardTokenStatus("Token dihapus dari browser ini.", "info");
+        });
+    }
+    if (quickSearch) {
+        quickSearch.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            applyDashboardQuickSearch(quickSearch.value);
+        });
+    }
+    if (collapseBtn) {
+        collapseBtn.addEventListener("click", () => {
+            const shell = document.querySelector(".dashboard-shell");
+            if (!shell) return;
+            shell.classList.toggle("sidebar-collapsed");
+        });
+    }
+    refreshDashboardToken();
+    updateDashboardSource();
+}
+
+function applyDashboardQuickSearch(value) {
+    const q = String(value || "").trim();
+    if (!q) return;
+    if (state.source === "meteostat") {
+        if (els.stationSearch) {
+            els.stationSearch.value = q;
+            els.stationSearch.dispatchEvent(new Event("input", { bubbles: true }));
+            els.stationSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+            els.stationSearch.focus();
+        }
+        return;
+    }
+    if (els.cityInput) {
+        els.cityInput.value = q;
+        els.cityInput.dispatchEvent(new Event("input", { bubbles: true }));
+        els.citySection?.scrollIntoView({ behavior: "smooth", block: "start" });
+        els.cityInput.focus();
+    }
+}
+
+function updateDashboardSource() {
+    const src = sourceDisplay(state.source);
+    const sourceEl = document.getElementById("metric-source");
+    const detailEl = document.getElementById("metric-source-detail");
+    if (sourceEl) sourceEl.textContent = src.label;
+    if (detailEl) detailEl.textContent = src.detail;
+}
+
+function renderDashboardSummary(result) {
+    if (!result) return;
+    const coverage = result.meta.coverage || buildCoverage({
+        startDate: result.meta.startDate,
+        endDate: result.meta.endDate,
+        rows: result.rows,
+        rowSources: result.meta.rowSources || [],
+    });
+    const days = document.getElementById("metric-days");
+    const percent = document.getElementById("metric-coverage");
+    const missing = document.getElementById("metric-missing");
+    if (days) {
+        const expected = coverage?.expected ? ` / ${coverage.expected}` : "";
+        days.textContent = `${result.rows.length}${expected}`;
+    }
+    if (percent) {
+        percent.textContent = coverage ? `${coverage.percent}%` : "Belum diaudit";
+    }
+    if (missing) {
+        if (!coverage) {
+            missing.textContent = "Data tidak tersedia belum dihitung";
+        } else {
+            const missingYears = Object.entries(coverage.missingByYear || {})
+                .map(([year, count]) => `${year}: ${count} hari`)
+                .join(", ");
+            missing.textContent = missingYears || "Tidak ada data kosong pada rentang ini";
+        }
+    }
+    updateDashboardSource();
+}
+
+function sourceDisplay(source) {
+    const map = {
+        openmeteo: {
+            label: "Open-Meteo",
+            detail: "Model global / ERA5 reanalysis",
+        },
+        meteostat: {
+            label: "Meteostat",
+            detail: "Observasi stasiun Indonesia",
+        },
+        power: {
+            label: "NASA POWER",
+            detail: "Reanalysis/model + radiasi surya",
+        },
+        noaa: {
+            label: "NOAA CDO",
+            detail: "GHCN Daily observasi global",
+        },
+    };
+    return map[source] || map.openmeteo;
 }
 
 function showLoginStatus(msg, type = "info", autoHideMs = 0) {
@@ -253,23 +480,7 @@ async function handleLoginSubmit() {
     }
     showLoginStatus("Memverifikasi token...", "loading");
     try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token }),
-        });
-        const text = await res.text();
-        if (!res.ok) {
-            let detail = text;
-            try {
-                detail = JSON.parse(text).detail || text;
-            } catch (_) {}
-            throw new Error(`HTTP ${res.status}: ${detail}`);
-        }
-        const profile = JSON.parse(text);
-        if (profile.revoked || profile.expired) {
-            throw new Error("Token sudah dicabut atau kadaluarsa.");
-        }
+        const profile = await loginWithToken(token);
         saveAuth(token, profile);
         input.value = "";
         showAppView();
@@ -280,6 +491,8 @@ async function handleLoginSubmit() {
 
 function handleLogout() {
     clearAuth();
+    const input = document.getElementById("dashboard-token-input");
+    if (input) input.value = "";
     showAppView();
     showStatus("Token/profil telah dikeluarkan. Token akan diminta lagi saat download.", "info");
 }
@@ -524,14 +737,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const profileTokenBtn = document.getElementById("profile-token-btn");
     if (profileTokenBtn) {
-        profileTokenBtn.addEventListener("click", async () => {
-            try {
-                await verifyTokenProfile();
-                const menu = document.getElementById("profile-menu");
-                if (menu) menu.hidden = true;
-            } catch (err) {
-                showStatus(`Gagal validasi token: ${friendlyErrorMessage(err)}`, "error");
-            }
+        profileTokenBtn.addEventListener("click", () => {
+            const menu = document.getElementById("profile-menu");
+            if (menu) menu.hidden = true;
+            focusDownloadAccessCard();
         });
     }
 
@@ -594,6 +803,7 @@ document.addEventListener("DOMContentLoaded", () => {
     els.startDate.value = "2016-01-01";
     els.endDate.value = "2025-12-31";
 
+    setupDashboardControls();
     setupSourceToggle();
     setupCityAutocomplete();
     setupStationPicker();
@@ -764,6 +974,7 @@ function updateSourceUI() {
     if (isMS && !state.stations.length) {
         loadStations();
     }
+    updateDashboardSource();
     applyDateBoundsForSource();
 }
 
@@ -1479,12 +1690,14 @@ async function handleSubmit({ download }) {
 
         if (result.rows.length === 0) {
             state.lastResult = result;
+            renderDashboardSummary(result);
             renderPreview(result);
             showStatus(emptyResultMessage(result), "error");
             return;
         }
         state.lastResult = result;
         const previewResult = previewResultForMode(result);
+        renderDashboardSummary(result);
         renderPreview(previewResult);
         renderClimateChart(result);
         if (download) {
@@ -3061,12 +3274,16 @@ function chartLocationLabel(result) {
 }
 
 async function authorizeDownloadToken(actionLabel = "Download") {
-    const current = state.auth.token || "";
-    const token = window.prompt(`${actionLabel} membutuhkan token berlangganan. Masukkan token:`, current);
-    if (!token) return null;
-    const cleaned = token.trim();
-    if (!cleaned) return null;
+    const cleaned = dashboardTokenValue();
+    if (!cleaned) {
+        const msg = `${actionLabel} membutuhkan token berlangganan. Masukkan token di kartu Akses Download.`;
+        showStatus(msg, "error");
+        showDashboardTokenStatus(msg, "error");
+        focusDownloadAccessCard();
+        return null;
+    }
     showStatus("Memvalidasi token dan kuota download...", "loading");
+    showDashboardTokenStatus("Memvalidasi kuota download...", "loading");
     const res = await fetch(`${BACKEND_URL}/api/auth/consume-download`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3078,38 +3295,33 @@ async function authorizeDownloadToken(actionLabel = "Download") {
         try {
             detail = JSON.parse(text).detail || text;
         } catch (_) {}
+        showDashboardTokenStatus(detail || "Token tidak valid atau kuota habis.", "error");
         throw new Error(detail || "Token tidak valid atau kuota habis.");
     }
     const profile = JSON.parse(text);
     saveAuth(cleaned, profile);
     refreshAuthBar();
+    showDashboardTokenStatus(
+        `Download disetujui. Sisa kuota ${profile.remaining_downloads}/${profile.quota_limit}.`,
+        "success"
+    );
     showStatus(`Token valid. Sisa kuota download: ${profile.remaining_downloads}/${profile.quota_limit}.`, "success");
     return profile;
 }
 
 async function verifyTokenProfile() {
-    const current = state.auth.token || "";
-    const token = window.prompt("Masukkan token untuk menampilkan profil dan kuota:", current);
-    if (!token) return null;
-    const cleaned = token.trim();
-    if (!cleaned) return null;
-    showStatus("Memvalidasi token...", "loading");
-    const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: cleaned }),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-        let detail = text;
-        try {
-            detail = JSON.parse(text).detail || text;
-        } catch (_) {}
-        throw new Error(detail || "Token tidak valid.");
+    const cleaned = dashboardTokenValue();
+    if (!cleaned) {
+        focusDownloadAccessCard();
+        showDashboardTokenStatus("Masukkan token ABS untuk melihat profil dan kuota.", "error");
+        return null;
     }
-    const profile = JSON.parse(text);
+    showStatus("Memvalidasi token...", "loading");
+    showDashboardTokenStatus("Memvalidasi token...", "loading");
+    const profile = await loginWithToken(cleaned);
     saveAuth(cleaned, profile);
     refreshAuthBar();
+    showDashboardTokenStatus(`Profil token aktif. Sisa kuota: ${profile.remaining_downloads}/${profile.quota_limit}.`, "success");
     showStatus(`Profil token aktif. Sisa kuota: ${profile.remaining_downloads}/${profile.quota_limit}.`, "success");
     return profile;
 }
@@ -3125,7 +3337,8 @@ async function downloadAllPngArchive() {
     }
     try {
         const archive = await buildVisiblePngArchive();
-        await authorizeDownloadToken("Unduh arsip PNG");
+        const authorized = await authorizeDownloadToken("Unduh arsip PNG");
+        if (!authorized) return;
         saveBlob(
             archive.blob,
             `png_angin_berhembus_${state.lastResult.meta.startDate}_to_${state.lastResult.meta.endDate}.zip`
