@@ -30,7 +30,8 @@ _OPENMETEO_ROUTES = {
 
 _POWER_DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 _NOAA_CDO_BASE = "https://www.ncei.noaa.gov/cdo-web/api/v2"
-_NOAA_GHCND_BULK_BASE = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/all"
+_NOAA_GHCND_BASE = "https://www.ncei.noaa.gov/pub/data/ghcn/daily"
+_NOAA_GHCND_BULK_BASE = f"{_NOAA_GHCND_BASE}/all"
 _NOAA_CDO_ROUTES = {
     "datasets",
     "datacategories",
@@ -138,3 +139,52 @@ async def noaa_ghcnd_daily_file(station_id: str) -> str:
     if not _NOAA_GHCND_STATION_RE.match(station):
         raise HTTPException(status_code=400, detail="Invalid NOAA station id")
     return await _proxy_text(f"{_NOAA_GHCND_BULK_BASE}/{station}.dly")
+
+
+@router.get("/api/noaa/ghcnd-stations")
+async def noaa_ghcnd_stations(request: Request) -> dict[str, Any]:
+    try:
+        lat = float(request.query_params.get("latitude", ""))
+        lon = float(request.query_params.get("longitude", ""))
+        radius = float(request.query_params.get("radius", "5"))
+        limit = int(request.query_params.get("limit", "50"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid latitude/longitude/radius") from exc
+
+    radius = max(0.1, min(radius, 15.0))
+    limit = max(1, min(limit, 200))
+    text = await _proxy_text(f"{_NOAA_GHCND_BASE}/ghcnd-stations.txt")
+    stations: list[dict[str, Any]] = []
+    min_lat = lat - radius
+    max_lat = lat + radius
+    min_lon = lon - radius
+    max_lon = lon + radius
+    for line in text.splitlines():
+        if len(line) < 42:
+            continue
+        station_id = line[0:11].strip()
+        try:
+            s_lat = float(line[12:20].strip())
+            s_lon = float(line[21:30].strip())
+        except ValueError:
+            continue
+        if not (min_lat <= s_lat <= max_lat and min_lon <= s_lon <= max_lon):
+            continue
+        try:
+            elev: float | str = float(line[31:37].strip())
+        except ValueError:
+            elev = ""
+        stations.append(
+            {
+                "id": f"GHCND:{station_id}",
+                "name": line[41:71].strip() or station_id,
+                "latitude": s_lat,
+                "longitude": s_lon,
+                "elevation": elev,
+                "mindate": "",
+                "maxdate": "",
+                "datacoverage": None,
+            }
+        )
+    stations.sort(key=lambda s: (s["latitude"] - lat) ** 2 + (s["longitude"] - lon) ** 2)
+    return {"count": len(stations), "results": stations[:limit], "source": "ghcnd-stations.txt"}
