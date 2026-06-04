@@ -326,6 +326,7 @@ function setupDashboardControls() {
     const tokenInput = document.getElementById("dashboard-token-input");
     const quickSearch = document.getElementById("dashboard-search");
     const collapseBtn = document.getElementById("sidebar-collapse-btn");
+    const guideLinks = document.querySelectorAll("[data-guide-target]");
 
     if (validateBtn) {
         validateBtn.addEventListener("click", async () => {
@@ -369,8 +370,43 @@ function setupDashboardControls() {
             shell.classList.toggle("sidebar-collapsed");
         });
     }
+    guideLinks.forEach((link) => {
+        link.addEventListener("click", () => {
+            scrollToGuideTarget(link.dataset.guideTarget);
+        });
+    });
     refreshDashboardToken();
     updateDashboardSource();
+}
+
+function scrollToGuideTarget(target) {
+    const ids = {
+        overview: "guide-overview",
+        source: "guide-source",
+        location: state.source === "meteostat" ? "station-section" : "city-section",
+        period: "guide-period",
+        output: "vars-section",
+        preview: "preview-section",
+        charts: !els.climateChartSection?.hidden ? "climate-chart-section" : "preview-section",
+        token: "download-access-card",
+    };
+    const id = ids[target] || "guide-overview";
+    const el = document.getElementById(id);
+    if (el && !el.hidden) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+    }
+    if (target === "preview") {
+        els.previewBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+        showStatus("Klik Pratinjau Data dulu untuk melihat audit kelengkapan.", "info");
+        return;
+    }
+    if (target === "charts") {
+        els.climateChartBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+        showStatus("Klik Tampilkan Grafik atau Tampilkan Windrose setelah pratinjau data selesai.", "info");
+        return;
+    }
+    focusDownloadAccessCard();
 }
 
 function applyDashboardQuickSearch(value) {
