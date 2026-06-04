@@ -13,6 +13,10 @@
 
 * { box-sizing: border-box; }
 
+html {
+    scroll-behavior: smooth;
+}
+
 body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
@@ -716,13 +720,29 @@ main#app-view {
 }
 
 .workflow-steps li {
+    margin: 0;
+}
+
+.workflow-link {
     display: grid;
     grid-template-columns: 34px minmax(0, 1fr);
     gap: 12px;
     align-items: start;
+    width: 100%;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    text-align: left;
+    text-decoration: none;
 }
 
-.workflow-steps li > span {
+.workflow-link:hover {
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.workflow-link > span {
     display: grid;
     place-items: center;
     width: 34px;
@@ -735,13 +755,13 @@ main#app-view {
     font-weight: 800;
 }
 
-.workflow-steps strong {
+.workflow-link strong {
     display: block;
     color: #0f172a;
     font-size: 14px;
 }
 
-.workflow-steps small {
+.workflow-link small {
     display: block;
     color: #64748b;
     font-size: 12px;
@@ -1573,6 +1593,10 @@ html[data-theme="light"] footer {
     margin-bottom: 16px;
 }
 
+.guide-section {
+    scroll-margin-top: 18px;
+}
+
 .dashboard-topbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
@@ -1584,6 +1608,67 @@ html[data-theme="light"] footer {
 .dashboard-topbar h2 {
     margin: 0 0 6px;
     font-size: 20px;
+}
+
+.beginner-guide {
+    margin-bottom: 0;
+}
+
+.guide-heading h2 {
+    margin-bottom: 6px;
+    font-size: 18px;
+}
+
+.guide-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.guide-cards article {
+    min-height: 154px;
+    padding: 14px;
+    background: rgba(39, 39, 42, 0.66);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+}
+
+.guide-cards article span {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 12px;
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(52, 211, 153, 0.34);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.guide-cards article strong {
+    display: block;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+.guide-cards article p,
+.step-help {
+    margin: 7px 0 0;
+    color: #a1a1aa;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.step-help {
+    padding: 11px 12px;
+    margin: -4px 0 15px;
+    color: #d4d4d8;
+    background: rgba(39, 39, 42, 0.54);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
 }
 
 .quick-search {
@@ -1738,23 +1823,46 @@ html[data-theme="light"] footer {
     display: none;
 }
 
-.dashboard-shell.sidebar-collapsed .workflow-steps li {
+.dashboard-shell.sidebar-collapsed .workflow-link {
     grid-template-columns: 1fr;
     justify-items: center;
 }
 
-.dashboard-shell.sidebar-collapsed .workflow-steps li > span {
+.dashboard-shell.sidebar-collapsed .workflow-link > span {
     width: 40px;
     height: 40px;
 }
 
 html[data-theme="light"] .dashboard-topbar,
 html[data-theme="light"] .download-access-card,
-html[data-theme="light"] .metric-card {
+html[data-theme="light"] .metric-card,
+html[data-theme="light"] .beginner-guide {
     color: #0f172a;
     background: rgba(255, 255, 255, 0.92);
     border-color: #dbe3ea;
     box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .guide-cards article,
+html[data-theme="light"] .step-help {
+    color: #334155;
+    background: #f8fafc;
+    border-color: #dbe3ea;
+}
+
+html[data-theme="light"] .guide-cards article strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .guide-cards article p,
+html[data-theme="light"] .step-help {
+    color: #64748b;
+}
+
+html[data-theme="light"] .guide-cards article span {
+    color: #0f766e;
+    background: #ecfdf5;
+    border-color: #99f6e4;
 }
 
 html[data-theme="light"] .quick-search label,
@@ -1796,6 +1904,10 @@ html[data-theme="light"] .token-quota-panel strong {
     .download-access-card {
         grid-template-columns: 1fr;
     }
+
+    .guide-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {
@@ -1808,6 +1920,10 @@ html[data-theme="light"] .token-quota-panel strong {
     .token-quota-panel {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .guide-cards {
+        grid-template-columns: 1fr;
     }
 
     .dashboard-shell.sidebar-collapsed {
