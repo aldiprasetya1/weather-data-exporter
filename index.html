@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260604-beginner-flow" />
+    <link rel="stylesheet" href="styles.css?v=20260604-ux-cleanup" />
     <script>
         (() => {
             const saved = localStorage.getItem("wde.theme");
@@ -52,7 +52,7 @@
             </div>
         </div>
         <div id="auth-bar" class="auth-bar" hidden>
-            <span id="auth-label" class="muted"></span>
+            <span id="auth-label" class="muted" hidden></span>
             <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Ganti tema" aria-pressed="false">
                 <span class="theme-icon" aria-hidden="true">☾</span>
                 <span id="theme-label">Gelap</span>
@@ -61,10 +61,9 @@
             <button id="logout-btn" type="button" class="link-button">Logout</button>
             <div id="profile-menu" class="profile-menu" hidden>
                 <strong>Akun</strong>
+                <p class="profile-caption">Username</p>
                 <p id="profile-email" class="muted">Belum masuk.</p>
                 <p id="profile-quota" class="muted">Token diminta saat mengunduh data.</p>
-                <button id="profile-token-btn" type="button" class="link-button">Masukkan token</button>
-                <button id="profile-google-btn" type="button" class="link-button">Google login segera hadir</button>
             </div>
         </div>
     </header>
@@ -177,15 +176,6 @@
                             </div>
                         </button>
                     </li>
-                    <li>
-                        <a class="workflow-link" href="/admin">
-                            <span>09</span>
-                            <div>
-                                <strong>Admin</strong>
-                                <small>Kelola token pelanggan</small>
-                            </div>
-                        </a>
-                    </li>
                 </ol>
                 <div class="sidebar-panel">
                     <strong>Tips untuk pemula</strong>
@@ -195,19 +185,28 @@
 
             <div class="dashboard-workspace">
         <section class="dashboard-overview" aria-label="Ringkasan dashboard export">
-            <div id="guide-overview" class="dashboard-topbar card guide-section">
-                <div>
-                    <p class="workflow-kicker">Angin Berhembus</p>
-                    <h2>Download Data Cuaca Tanpa Ribet</h2>
-                    <p class="muted">Ikuti urutan di bawah: pilih sumber, pilih lokasi, tentukan periode, cek pratinjau, lalu download file Excel dan PNG.</p>
+            <section id="download-access-card" class="card download-access-card guide-section">
+                <div class="access-copy">
+                    <p class="workflow-kicker">Akses Download</p>
+                    <h2>Token Berlangganan</h2>
+                    <p class="muted">Masukkan token ABS untuk membuka download .xlsx dan semua PNG. Kuota berkurang hanya saat file berhasil diminta untuk diunduh.</p>
                 </div>
-                <div class="quick-search">
-                    <label for="dashboard-search">Cari cepat</label>
-                    <input id="dashboard-search" type="search" placeholder="Cari kota atau stasiun..." autocomplete="off" />
+                <div class="access-form">
+                    <label for="dashboard-token-input">Token akses</label>
+                    <div class="token-input-row">
+                        <input id="dashboard-token-input" type="text" placeholder="ABS-..." autocomplete="off" spellcheck="false" />
+                        <button id="dashboard-token-validate" type="button" class="primary">Validasi</button>
+                        <button id="dashboard-token-clear" type="button">Hapus</button>
+                    </div>
+                    <div class="token-quota-panel">
+                        <span id="dashboard-token-label">Belum ada token aktif.</span>
+                        <strong id="dashboard-token-quota">Kuota: -</strong>
+                    </div>
+                    <div id="dashboard-token-status" class="status" hidden></div>
                 </div>
-            </div>
+            </section>
 
-            <section class="card beginner-guide">
+            <section id="guide-overview" class="card beginner-guide guide-section">
                 <div class="guide-heading">
                     <p class="workflow-kicker">Alur Step By Step</p>
                     <h2>Cara download data</h2>
@@ -270,59 +269,39 @@
                 </article>
             </div>
 
-            <section id="download-access-card" class="card download-access-card guide-section">
-                <div class="access-copy">
-                    <p class="workflow-kicker">Akses Download</p>
-                    <h2>Token Berlangganan</h2>
-                    <p class="muted">Masukkan token ABS untuk membuka download .xlsx dan semua PNG. Kuota berkurang hanya saat file berhasil diminta untuk diunduh.</p>
-                </div>
-                <div class="access-form">
-                    <label for="dashboard-token-input">Token akses</label>
-                    <div class="token-input-row">
-                        <input id="dashboard-token-input" type="text" placeholder="ABS-..." autocomplete="off" spellcheck="false" />
-                        <button id="dashboard-token-validate" type="button" class="primary">Validasi</button>
-                        <button id="dashboard-token-clear" type="button">Hapus</button>
-                    </div>
-                    <div class="token-quota-panel">
-                        <span id="dashboard-token-label">Belum ada token aktif.</span>
-                        <strong id="dashboard-token-quota">Kuota: -</strong>
-                    </div>
-                    <div id="dashboard-token-status" class="status" hidden></div>
-                </div>
-            </section>
         </section>
 
         <form id="weather-form">
             <section id="guide-source" class="card guide-section">
                 <h2>1. Pilih sumber data</h2>
                 <p class="step-help">Bingung memilih? Gunakan <strong>Open-Meteo</strong> untuk kebutuhan umum dan lokasi mana saja. Gunakan <strong>Meteostat</strong> atau <strong>NOAA CDO</strong> bila Anda membutuhkan data observasi stasiun.</p>
-                <div class="radio-row">
+                <div class="radio-row source-grid">
                     <label class="radio">
                         <input type="radio" name="source" value="openmeteo" checked />
                         <span>
-                            <strong>Open-Meteo (model global)</strong>
-                            <em class="muted">- grid reanalysis/forecast, kota mana saja di dunia</em>
+                            <strong>1. Open Meteo</strong>
+                            <em class="muted">menggunakan data grid model reanalysis/forecast dari seluruh kota di dunia</em>
                         </span>
                     </label>
                     <label class="radio">
                         <input type="radio" name="source" value="meteostat" />
                         <span>
-                            <strong>Meteostat (stasiun observasi Indonesia)</strong>
-                            <em class="muted">- observasi historis dari stasiun ASOS/SYNOP BMKG (~129 stasiun)</em>
+                            <strong>2. Meteostat</strong>
+                            <em class="muted">menggunakan data observasi historis dari stasiun ASOS/SYNOP BMKG</em>
                         </span>
                     </label>
                     <label class="radio">
                         <input type="radio" name="source" value="power" />
                         <span>
-                            <strong>NASA POWER (model + radiasi surya)</strong>
-                            <em class="muted">- MERRA-2 reanalysis, lengkap dengan GHI/DNI/DHI/PAR (untuk PV / pertanian)</em>
+                            <strong>3. NASA Power</strong>
+                            <em class="muted">menggunakan MERRA-2 reanalysis dari NASA lengkap dengan GHI/DNI/DHI/PAR</em>
                         </span>
                     </label>
                     <label class="radio">
                         <input type="radio" name="source" value="noaa" />
                         <span>
-                            <strong>NOAA CDO / GHCN Daily (observasi global)</strong>
-                            <em class="muted">- data harian stasiun NOAA/NCEI, memakai stasiun terdekat dari lokasi</em>
+                            <strong>4. NOAA CDO</strong>
+                            <em class="muted">menggunakan data harian global dari stasiun darat NOAA/NCEI dengan sistem pencarian stasiun terdekat dari koordinat lokasi anda.</em>
                         </span>
                     </label>
                 </div>
@@ -682,6 +661,6 @@
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="config.js"></script>
-    <script src="app.js?v=20260604-beginner-flow"></script>
+    <script src="app.js?v=20260604-ux-cleanup"></script>
 </body>
 </html>
