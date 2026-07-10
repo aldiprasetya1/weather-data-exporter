@@ -1,4 +1,4 @@
-﻿// Weather Data Exporter - fetches weather data from Open-Meteo (model),
+// Weather Data Exporter - fetches weather data from Open-Meteo (model),
 // Meteostat (Indonesian observation stations), NASA POWER (MERRA-2),
 // or NOAA CDO / GHCN Daily (global observation stations)
 // reanalysis with solar radiation), renders a windrose, and exports to
@@ -883,7 +883,7 @@ document.addEventListener("DOMContentLoaded", () => {
     els.climateChartBtn.addEventListener("click", showClimateChart);
     els.climateChartDownload.addEventListener("click", downloadAllPngArchive);
     els.windroseBtn.addEventListener("click", () => showWindrose(true));
-    els.windroseDownload.addEventListener("click", downloadAllPngArchive);
+    els.windroseDownload.addEventListener("click", downloadWindrosePNG);
     els.windroseModeRadios.forEach((r) =>
         r.addEventListener("change", () => {
             state.windroseMode = r.value;
@@ -4230,27 +4230,51 @@ function binIndexFor(spd) {
     return 0;
 }
 
-function downloadWindrosePNG() {
+async function downloadWindrosePNG() {
     const result = state.lastResult;
     if (!result || !els.windroseChart || els.windroseSection.hidden) {
         showStatus("Tampilkan windrose dulu sebelum unduh.", "error");
         return;
     }
-    downloadAllPngArchive();
+    try {
+        const mode = state.windroseMode === "to" ? "to" : "from";
+        const modeText = mode === "to" ? "Blowing To" : "Blowing From";
+        const authorized = await authorizeDownloadToken(`Unduh Windrose PNG (${modeText})`);
+        if (!authorized) return;
+
+        showStatus("Menyiapkan unduhan windrose...", "loading");
+        const dataUrl = await Plotly.toImage(els.windroseChart, {
+            format: "png",
+            width: 900,
+            height: 800,
+        });
+
+        // Convert data URL to Blob to save it correctly
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        const filename = windroseFilename(result);
+
+        saveBlob(blob, `${filename}.png`);
+        showStatus(`Berhasil. Windrose (${modeText}) diunduh sebagai PNG.`, "success");
+    } catch (err) {
+        console.error(err);
+        showStatus(`Gagal unduh Windrose PNG: ${friendlyErrorMessage(err)}`, "error");
+    }
 }
 
 function windroseFilename(result) {
     const safe = (s) => String(s || "x").replace(/[^a-z0-9]+/gi, "_");
+    const modeLabel = state.windroseMode === "to" ? "blowing_to" : "blowing_from";
     if (result.source === "meteostat") {
         const s = result.meta.station;
-        return `windrose_meteostat_${safe(s.wmo || s.id)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+        return `windrose_${modeLabel}_meteostat_${safe(s.wmo || s.id)}_${result.meta.startDate}_to_${result.meta.endDate}`;
     }
     if (result.source === "power") {
-        return `windrose_power_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+        return `windrose_${modeLabel}_power_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
     }
     if (result.source === "noaa") {
         const s = result.meta.station || {};
-        return `windrose_noaa_ghcnd_${safe(s.id || s.name || "station")}_${result.meta.startDate}_to_${result.meta.endDate}`;
+        return `windrose_${modeLabel}_noaa_ghcnd_${safe(s.id || s.name || "station")}_${result.meta.startDate}_to_${result.meta.endDate}`;
     }
-    return `windrose_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
+    return `windrose_${modeLabel}_${safe(result.meta.city.name)}_${result.meta.startDate}_to_${result.meta.endDate}`;
 }

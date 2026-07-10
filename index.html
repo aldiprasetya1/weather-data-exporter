@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260605-noaa-cdo-resilient" />
+    <link rel="stylesheet" href="styles.css?v=20260705-balanced-output-grid" />
     <script>
         (() => {
             const saved = localStorage.getItem("wde.theme");
@@ -87,92 +87,7 @@
 
     <main id="app-view" hidden>
         <div class="dashboard-shell">
-            <aside class="workflow-sidebar" aria-label="Alur kerja export data">
-                <div class="sidebar-title-row">
-                    <div>
-                        <p class="workflow-kicker">Panduan Download</p>
-                        <h2>Mulai Dari Sini</h2>
-                    </div>
-                </div>
-                <ol class="workflow-steps">
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="overview">
-                            <span>01</span>
-                            <div>
-                                <strong>Cara download</strong>
-                                <small>Lihat ringkasan alur kerja</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="source">
-                            <span>02</span>
-                            <div>
-                                <strong>Pilih sumber data</strong>
-                                <small>Rekomendasi untuk pemula tersedia</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="location">
-                            <span>03</span>
-                            <div>
-                                <strong>Pilih lokasi</strong>
-                                <small>Kota, stasiun, peta, atau koordinat</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="period">
-                            <span>04</span>
-                            <div>
-                                <strong>Tentukan periode</strong>
-                                <small>Pilih tahun atau rentang siap pakai</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="output">
-                            <span>05</span>
-                            <div>
-                                <strong>Pilih output</strong>
-                                <small>Data harian atau rekap bulanan</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="preview">
-                            <span>06</span>
-                            <div>
-                                <strong>Cek pratinjau</strong>
-                                <small>Pastikan data tersedia sebelum download</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="charts">
-                            <span>07</span>
-                            <div>
-                                <strong>Grafik & windrose</strong>
-                                <small>Tampilkan visualisasi bila dibutuhkan</small>
-                            </div>
-                        </button>
-                    </li>
-                    <li>
-                        <button type="button" class="workflow-link" data-guide-target="token">
-                            <span>08</span>
-                            <div>
-                                <strong>Masukkan token</strong>
-                                <small>Token dipakai saat download</small>
-                            </div>
-                        </button>
-                    </li>
-                </ol>
-                <div class="sidebar-panel">
-                    <strong>Tips untuk pemula</strong>
-                    <p>Mulai dari Open-Meteo bila hanya butuh data cepat untuk lokasi mana saja. Gunakan Meteostat/NOAA bila perlu observasi stasiun.</p>
-                </div>
-            </aside>
+
 
             <div class="dashboard-workspace">
         <section class="dashboard-overview" aria-label="Ringkasan dashboard export">
@@ -603,7 +518,7 @@
         <section id="windrose-section" class="card guide-section" hidden>
             <div class="windrose-header">
                 <h2>Windrose</h2>
-                <button id="windrose-download" type="button" hidden>Unduh Semua PNG (.zip)</button>
+                <button id="windrose-download" type="button" hidden>Unduh Windrose PNG</button>
             </div>
             <div class="windrose-controls">
                 <span class="muted">Mode:</span>
@@ -631,6 +546,6 @@
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script src="config.js"></script>
-    <script src="app.js?v=20260605-noaa-cdo-resilient"></script>
+    <script src="app.js?v=20260705-download-windrose"></script>
 </body>
 </html>

@@ -23,3 +23,5 @@ backend/app/admin_secret.txt
 backend/app/admin_secret.txt.local
 .vercel
 .env*.local
+offline-data/
+

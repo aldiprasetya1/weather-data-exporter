@@ -680,7 +680,7 @@ main#app-view {
 
 .dashboard-shell {
     display: grid;
-    grid-template-columns: 282px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 24px;
     align-items: start;
 }
@@ -1794,13 +1794,14 @@ html[data-theme="light"] footer {
 
 .output-access-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
     align-items: stretch;
 }
 
 .output-access-grid > .card {
-    margin-bottom: 16px;
+    min-height: 214px;
+    margin-bottom: 0;
 }
 
 .output-access-grid .download-access-card {

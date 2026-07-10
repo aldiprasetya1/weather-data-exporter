@@ -52,7 +52,10 @@ _admin_secret_cache: str | None = None
 
 
 def _ensure_dir() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"[auth] Warning: could not create directory {DB_PATH.parent}: {e}", flush=True)
 
 
 def _connect() -> Any:
@@ -61,10 +64,15 @@ def _connect() -> Any:
         # the Turso/libSQL HTTPS endpoint.
         return libsql.connect(database=TURSO_URL, auth_token=TURSO_AUTH)
     _ensure_dir()
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+    except sqlite3.Error as e:
+        print(f"[auth] Local database path {DB_PATH} could not be opened: {e}. Falling back to in-memory SQLite.", flush=True)
+        conn = sqlite3.connect(":memory:")
+        return conn
 
 
 def init_db() -> None:

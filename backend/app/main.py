@@ -24,7 +24,8 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import auth
 from .admin import router as admin_router
@@ -54,13 +55,28 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _on_startup() -> None:
-    auth.init_db()
-    # Ensure an admin secret exists on first boot so `fly logs` can show it.
-    auth._read_admin_secret()
+    try:
+        auth.init_db()
+        # Ensure an admin secret exists on first boot so `fly logs` can show it.
+        auth._read_admin_secret()
+    except Exception as e:
+        print(f"[main] Warning: DB or admin secret initialization failed during startup: {e}", flush=True)
 
 
 app.include_router(admin_router)
 app.include_router(proxies_router)
+
+FRONTEND_DIR = Path(__file__).resolve().parents[2]
+
+
+@app.get("/", include_in_schema=False)
+def frontend_index() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/admin", include_in_schema=False)
+def frontend_admin() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "admin.html")
 
 STATIONS_FILE = Path(__file__).parent / "stations_id.json"
 with STATIONS_FILE.open(encoding="utf-8") as fh:
@@ -558,3 +574,9 @@ async def _fetch_year(client: httpx.AsyncClient, station_id: str, year: int) -> 
                 item[col] = v
         rows.append(item)
     return rows
+
+
+# Local/offline mode: when this FastAPI app is run directly with uvicorn,
+# serve the frontend from the same origin so config.js can keep BACKEND_URL="".
+# Vercel still serves these files statically in production.
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
